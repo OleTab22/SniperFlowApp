@@ -9,7 +9,7 @@ SniperFlow is a gold-only Android trading assistant that enforces discipline wit
 - Chart overlays: Daily Open, PDH/PDL, Asia/London/NY shading, London Fix
 - Journal: pre-filled from alerts; offline queue → sync
 
-## Tech (suggested)
+## Tech 
 - Kotlin, Clean Architecture (domain/data/ui), Retrofit, Room, WorkManager, FCM
 
-## Repo layout (suggested)
+## Repo layout 
