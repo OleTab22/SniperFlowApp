@@ -76,7 +76,7 @@ async def fetch_yahoo(symbol: str):
     # Map app symbol to Yahoo
     ticker = "XAUUSD=X" if symbol.upper() == "XAUUSD" else symbol
     url = f"{YF_BASE}{ticker}"
-    params = {"interval": "5m", "range": "2d"}
+    params = {"interval": "1m", "range": "1d"}
     r = await _client.get(url, params=params, timeout=15)
     r.raise_for_status()
     j = r.json()
@@ -232,6 +232,19 @@ async def fetch_twelvedata(symbol: str):
     return candles, last_price
 
 
+async def fetch_twelvedata_price(symbol: str) -> float:
+    if not TWELVE_KEY:
+        raise RuntimeError("TwelveData key missing")
+    sym = "XAU/USD" if symbol.upper() == "XAUUSD" else symbol
+    url = "https://api.twelvedata.com/price"
+    r = await _client.get(url, params={"symbol": sym, "apikey": TWELVE_KEY}, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    p = j.get("price")
+    if p is None:
+        raise RuntimeError(f"TwelveData price: {j}")
+    return float(p)
+
 async def get_candles(symbol: str):
     key = ("candles", symbol.upper())
     ts_payload = _cache.get(key)
@@ -242,6 +255,12 @@ async def get_candles(symbol: str):
     except Exception as e_yahoo:
         try:
             payload = await fetch_twelvedata(symbol)
+            # Verify last price using dedicated price endpoint
+            try:
+                last_override = await fetch_twelvedata_price(symbol)
+                payload = (payload[0], last_override)
+            except Exception:
+                pass
         except Exception as e_twelve:
             try:
                 payload = await fetch_stooq(symbol)
