@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Spacing tokens -->
+    <dimen name="space_4">4dp</dimen>
+    <dimen name="space_8">8dp</dimen>
+    <dimen name="space_12">12dp</dimen>
+    <dimen name="space_16">16dp</dimen>
+    <dimen name="space_20">20dp</dimen>
+    <dimen name="space_24">24dp</dimen>
+
+    <!-- Bias Ring radii -->
+    <dimen name="bias_ring_min">72dp</dimen>
+    <dimen name="bias_ring_max">96dp</dimen>
+</resources>
+

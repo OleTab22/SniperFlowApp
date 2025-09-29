@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.swiperefreshlayout.widget.SwipeRefreshLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/swipe"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+        <!-- Live Price Panel -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/livePriceCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/symbolText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="XAU/USD"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/priceText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="-"
+                    android:textSize="28sp"
+                    android:layout_marginTop="4dp" />
+
+                <TextView
+                    android:id="@+id/changeText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="(+0.00%)"
+                    android:textSize="14sp"
+                    android:layout_marginTop="2dp" />
+
+                <com.example.sniperflow.ui.SparklineView
+                    android:id="@+id/miniChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="8dp" />
+
+                <TextView
+                    android:id="@+id/updatedText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Updated --:--:--"
+                    android:textSize="12sp"
+                    android:layout_marginTop="6dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/refreshBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Refresh" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Market Metrics and 24h H/L -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/metricsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView android:id="@+id/gapText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Gap —" />
+                    <TextView android:id="@+id/rangeText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Range —" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp">
+                    <TextView android:id="@+id/volumeText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Volume —" />
+                    <TextView android:id="@+id/activityText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Activity —" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/nowcastText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Nowcast —"
+                    android:layout_marginTop="6dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
+                    <TextView android:id="@+id/high24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="H24 —" />
+                    <TextView android:id="@+id/low24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="L24 —" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Bias Panel -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/biasCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <com.example.sniperflow.ui.BiasRingView
+                    android:id="@+id/biasRing"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    app:sf_confidence="0.62"
+                    app:sf_direction="bull" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp">
+
+                    <TextView
+                        android:id="@+id/biasTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bias: Neutral" />
+
+                    <TextView
+                        android:id="@+id/biasConfidence"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Conf. 0%"
+                        android:layout_marginTop="4dp" />
+
+                    <com.google.android.flexbox.FlexboxLayout
+                        android:id="@+id/driversFlex"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:flexWrap="wrap"
+                        app:justifyContent="flex_start"
+                        android:layout_marginTop="8dp" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Session Tracker -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/sessionsTrackerCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/asiaBtn"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Asia\n01:00–09:00" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/londonBtn"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="London\n09:00–13:00" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/newyorkBtn"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="New York\n14:30–18:00" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Fix times shown on chart."
+                    android:textSize="12sp"
+                    android:layout_marginTop="6dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Key Levels -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/levelsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView android:id="@+id/doVal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="DO —" />
+                    <TextView android:id="@+id/pdhVal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="PDH —" />
+                    <TextView android:id="@+id/pdlVal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="PDL —" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Economic Event Countdown -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/eventsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+                <TextView
+                    android:id="@+id/eventText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="US CPI in 42m (High)" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Quick Actions -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/alertsBtn"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="Alerts" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/openChartBtn"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Open Chart" />
+        </LinearLayout>
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fabAdd"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="12dp"
+            app:backgroundTint="@color/colorPrimary"
+            app:tint="@color/colorOnPrimary"
+            android:contentDescription="Add"
+            android:src="@android:drawable/ic_input_add" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+
+

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base styles to satisfy implicit parents for dotted style names -->
+    <style name="Sniper" />
+    <style name="Text" />
+    <style name="Text.Inter" parent="Text" />
+    <style name="Text.Size" parent="Text" />
+    <!-- Typography styles using system sans-serif as placeholder for Inter -->
+    <style name="Text.Inter.Regular" parent="Text.Inter">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+    <style name="Text.Inter.SemiBold" parent="Text.Inter">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+    <style name="Text.Inter.Bold" parent="Text.Inter">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Scale: 12, 14, 16, 20, 24, 32 -->
+    <style name="Text.Size.12" parent="Text.Size"><item name="android:textSize">12sp</item></style>
+    <style name="Text.Size.14" parent="Text.Size"><item name="android:textSize">14sp</item></style>
+    <style name="Text.Size.16" parent="Text.Size"><item name="android:textSize">16sp</item></style>
+    <style name="Text.Size.20" parent="Text.Size"><item name="android:textSize">20sp</item></style>
+    <style name="Text.Size.24" parent="Text.Size"><item name="android:textSize">24sp</item></style>
+    <style name="Text.Size.32" parent="Text.Size"><item name="android:textSize">32sp</item></style>
+
+    <!-- Combined helpers -->
+    <style name="Text.Body">
+        <item name="android:textColor">@color/colorOnBackground</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+    <style name="Text.Heading">
+        <item name="android:textColor">@color/colorOnBackground</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">24sp</item>
+    </style>
+
+    <!-- Chip and pill styles for Home dashboard -->
+    <style name="Sniper.Chip">
+        <item name="android:background">@drawable/bg_chip</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:layout_marginRight">8dp</item>
+    </style>
+
+    <style name="Sniper.SessionPill" parent="Sniper.Chip" />
+
+    <style name="Sniper.SessionPill.Active" parent="Sniper.Chip">
+        <item name="android:background">@drawable/bg_chip_active</item>
+        <item name="android:textColor">@color/colorOnPrimary</item>
+    </style>
+
+    <style name="Sniper.LevelPill" parent="Sniper.Chip" />
+
+    <style name="Sniper.LevelPill.Blue" parent="Sniper.Chip">
+        <item name="android:background">@drawable/bg_chip_blue</item>
+    </style>
+
+    <style name="Sniper.LevelPill.Red" parent="Sniper.Chip">
+        <item name="android:background">@drawable/bg_chip_red</item>
+    </style>
+
+    <style name="Sniper.NewsPill">
+        <item name="android:background">@drawable/bg_news_red</item>
+        <item name="android:textColor">@color/colorOnPrimary</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+</resources>
+

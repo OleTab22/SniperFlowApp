@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="BiasRingView">
+        <attr name="sf_confidence" format="float"/>
+        <attr name="sf_direction" format="enum">
+            <enum name="bull" value="0"/>
+            <enum name="bear" value="1"/>
+        </attr>
+    </declare-styleable>
+</resources>
+
+
