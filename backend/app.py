@@ -7,6 +7,8 @@ import httpx
 from datetime import datetime, timedelta, timezone
 import pytz
 from typing import Optional, Tuple, Dict, Any
+import csv
+from io import StringIO
 
 NY = pytz.timezone("America/New_York")
 YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
@@ -153,6 +155,42 @@ async def fetch_alpha(symbol: str):
     return candles, last_price
 
 
+async def fetch_stooq(symbol: str):
+    # Stooq free CSV, supports 5-minute bars for FX pairs
+    pair = symbol.lower()
+    if pair == "xauusd":
+        ticker = "xauusd"
+    else:
+        ticker = pair
+    url = f"https://stooq.com/q/d/l/?s={ticker}&i=5"
+    r = await _client.get(url, timeout=15)
+    r.raise_for_status()
+    text = r.text
+    # CSV header: date,time,open,high,low,close,volume
+    f = StringIO(text)
+    reader = csv.DictReader(f)
+    candles = []
+    for row in reader:
+        try:
+            dt_str = f"{row['date']} {row['time']}"
+            naive = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+            aware = naive.replace(tzinfo=timezone.utc)
+            candles.append({
+                "t": to_utc_ms(aware),
+                "o": float(row["open"]),
+                "h": float(row["high"]),
+                "l": float(row["low"]),
+                "c": float(row["close"]),
+            })
+        except Exception:
+            continue
+    if not candles:
+        raise RuntimeError("Stooq: empty series")
+    candles.sort(key=lambda x: x["t"])
+    last_price = candles[-1]["c"]
+    return candles, last_price
+
+
 async def get_candles(symbol: str):
     key = ("candles", symbol.upper())
     ts_payload = _cache.get(key)
@@ -162,9 +200,12 @@ async def get_candles(symbol: str):
         payload = await fetch_yahoo(symbol)
     except Exception as e_yahoo:
         try:
-            payload = await fetch_alpha(symbol)
-        except Exception as e_alpha:
-            raise RuntimeError(f"Yahoo failed: {e_yahoo}; Alpha failed: {e_alpha}")
+            payload = await fetch_stooq(symbol)
+        except Exception as e_stooq:
+            try:
+                payload = await fetch_alpha(symbol)
+            except Exception as e_alpha:
+                raise RuntimeError(f"Yahoo failed: {e_yahoo}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
