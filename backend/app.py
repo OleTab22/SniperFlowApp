@@ -245,6 +245,27 @@ async def fetch_twelvedata_price(symbol: str) -> float:
         raise RuntimeError(f"TwelveData price: {j}")
     return float(p)
 
+async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
+    if not TWELVE_KEY:
+        raise RuntimeError("TwelveData key missing")
+    sym = "XAU/USD" if symbol.upper() == "XAUUSD" else symbol
+    url = "https://api.twelvedata.com/quote"
+    r = await _client.get(url, params={"symbol": sym, "apikey": TWELVE_KEY}, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    if "bid" not in j and "ask" not in j and "price" not in j:
+        raise RuntimeError(f"TwelveData quote: {j}")
+    def _to_f(v):
+        try:
+            return float(v) if v is not None else None
+        except Exception:
+            return None
+    return {
+        "bid": _to_f(j.get("bid")),
+        "ask": _to_f(j.get("ask")),
+        "last": _to_f(j.get("price") or j.get("close")),
+    }
+
 async def get_candles(symbol: str):
     key = ("candles", symbol.upper())
     ts_payload = _cache.get(key)
@@ -310,6 +331,16 @@ async def health():
 async def intraday(symbol: str = "XAUUSD"):
     try:
         candles, last_price = await get_candles(symbol)
+        # If we used TwelveData, refine with bid/ask mid to align with broker quotes
+        try:
+            q = await fetch_twelvedata_quote(symbol)
+            bid, ask = q.get("bid"), q.get("ask")
+            if bid and ask:
+                last_price = (bid + ask) / 2.0
+            elif q.get("last"):
+                last_price = q["last"]
+        except Exception:
+            pass
         nyt = ny_now()
         anchor = session_day_anchor(nyt)
         cur_start = anchor
