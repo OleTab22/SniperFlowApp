@@ -30,7 +30,7 @@ android {
                 "proguard-rules.pro"
             )
             // Point to your production API endpoint (HTTPS)
-            buildConfigField("String", "BASE_URL", "\"https://api.yourdomain.com/\"")
+            buildConfigField("String", "BASE_URL", "\"https://sniperflow-api.onrender.com/\"")
         }
     }
     compileOptions {
