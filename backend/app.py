@@ -9,6 +9,7 @@ import pytz
 from typing import Optional, Tuple, Dict, Any
 import csv
 from io import StringIO
+import math
 
 NY = pytz.timezone("America/New_York")
 YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
@@ -392,4 +393,118 @@ async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
         }
     }
 
+
+# ---------------- Consolidated Home Endpoint ----------------
+
+def _z_from_tail(values, lookback: int = 120) -> float:
+    v = values[-lookback:] if len(values) >= lookback else values
+    if len(v) < 10:
+        return 0.0
+    mean = sum(v) / len(v)
+    var = sum((x - mean) ** 2 for x in v) / max(1, len(v) - 1)
+    sd = math.sqrt(var)
+    if sd == 0:
+        return 0.0
+    z = (v[-1] - mean) / sd
+    return max(-3.0, min(3.0, z))
+
+
+def _find_sast_midnight_open(candles) -> Optional[float]:
+    tz = pytz.timezone("Africa/Johannesburg")
+    # search for first bar with 00:00 local time today
+    now_local = datetime.now(tz)
+    ymd = now_local.strftime("%Y-%m-%d")
+    for c in candles:
+        t_local = datetime.fromtimestamp(c["t"] / 1000, tz=pytz.UTC).astimezone(tz)
+        if t_local.strftime("%Y-%m-%d") == ymd and t_local.hour == 0 and t_local.minute == 0:
+            return c["o"]
+    # fallback to first candle of local day
+    for c in candles:
+        t_local = datetime.fromtimestamp(c["t"] / 1000, tz=pytz.UTC).astimezone(tz)
+        if t_local.strftime("%Y-%m-%d") == ymd:
+            return c["o"]
+    return None
+
+
+async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
+    try:
+        candles, last_price = await fetch_yahoo(symbol)
+        return {"candles": candles, "last": last_price}
+    except Exception:
+        return None
+
+
+@app.get("/home")
+async def home():
+    try:
+        # XAU intraday (with multi-provider fallback via get_candles)
+        candles, last_price = await get_candles("XAUUSD")
+
+        # Build arrays
+        ts = [c["t"] for c in candles]
+        o = [c["o"] for c in candles]
+        h = [c["h"] for c in candles]
+        l = [c["l"] for c in candles]
+        cvals = [c["c"] for c in candles]
+
+        # 24h window stats
+        end_ms = now_utc_ms()
+        start_ms = end_ms - 24 * 60 * 60 * 1000
+        win = [i for i, t in enumerate(ts) if t >= start_ms]
+        if win:
+            i0 = win[0]
+        else:
+            i0 = max(0, len(ts) - 1)
+        high24 = max(h[i0:]) if i0 < len(h) else None
+        low24 = min(l[i0:]) if i0 < len(l) else None
+        base = cvals[i0] if i0 < len(cvals) and cvals[i0] else None
+        change24 = (last_price - base) if (base is not None) else None
+        pct24 = ((change24 / base) * 100.0) if (base and base != 0) else None
+
+        # SAST DO
+        do_price = _find_sast_midnight_open(candles)
+
+        # Drivers via YF (best effort)
+        dxy = await _fetch_intraday_yf_series("^DXY")
+        vix = await _fetch_intraday_yf_series("^VIX")
+        tnx = await _fetch_intraday_yf_series("^TNX")
+        drivers = []
+        if dxy:
+            drivers.append({"key": "dxyZ", "value": _z_from_tail([c["c"] for c in dxy["candles"]])})
+        if tnx:
+            drivers.append({"key": "realZ", "value": _z_from_tail([c["c"] / 10.0 for c in tnx["candles"]])})
+        if vix:
+            drivers.append({"key": "vixZ", "value": _z_from_tail([c["c"] for c in vix["candles"]])})
+
+        # Calendar next red using existing stub
+        cal = await calendar_upcoming("USD", 72)
+
+        payload = {
+            "price": {
+                "last": last_price,
+                "change24h": change24,
+                "pct24h": pct24,
+                "high24h": high24,
+                "low24h": low24,
+                "updatedAt": end_ms,
+            },
+            "levels": {
+                "do": {"price": do_price},
+                "pdh": {"price": max(h) if h else None},
+                "pdl": {"price": min(l) if l else None},
+            },
+            "metrics": {
+                "gap_pct": ((last_price - do_price) / do_price * 100.0) if (do_price and do_price != 0) else None,
+                "nowcast": {
+                    "drivers": drivers,
+                    "model_id": "stub-000",
+                    "updated_at": end_ms,
+                },
+            },
+            "calendar": {"next_red": cal.get("next_red")} if isinstance(cal, dict) else {},
+            "quality": {"state": "OK"},
+        }
+        return payload
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
