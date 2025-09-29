@@ -160,8 +160,11 @@ async def get_candles(symbol: str):
         return ts_payload[1]
     try:
         payload = await fetch_yahoo(symbol)
-    except Exception:
-        payload = await fetch_alpha(symbol)
+    except Exception as e_yahoo:
+        try:
+            payload = await fetch_alpha(symbol)
+        except Exception as e_alpha:
+            raise RuntimeError(f"Yahoo failed: {e_yahoo}; Alpha failed: {e_alpha}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
@@ -184,7 +187,9 @@ def build_sessions_windows(ny_anchor: datetime):
 @app.on_event("startup")
 async def startup():
     global _client
-    _client = httpx.AsyncClient()
+    _client = httpx.AsyncClient(headers={
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
+    })
 
 
 @app.on_event("shutdown")
