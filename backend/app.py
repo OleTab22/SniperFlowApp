@@ -14,6 +14,8 @@ NY = pytz.timezone("America/New_York")
 YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
 ALPHA_BASE = "https://www.alphavantage.co/query"
 ALPHA_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
+TWELVE_BASE = "https://api.twelvedata.com/time_series"
+TWELVE_KEY = os.getenv("TWELVEDATA_API_KEY")
 
 app = FastAPI()
 # Allow mobile clients to call the API (adjust origins if you want to restrict)
@@ -191,21 +193,62 @@ async def fetch_stooq(symbol: str):
     return candles, last_price
 
 
+async def fetch_twelvedata(symbol: str):
+    if not TWELVE_KEY:
+        raise RuntimeError("TwelveData key missing")
+    # TwelveData expects symbols like XAU/USD
+    sym = "XAU/USD" if symbol.upper() == "XAUUSD" else symbol
+    params = {
+        "symbol": sym,
+        "interval": "5min",
+        "outputsize": "390",  # roughly 2 trading days of 5m bars
+        "apikey": TWELVE_KEY,
+        "timezone": "UTC",
+        "format": "JSON",
+        "order": "ASC",
+    }
+    r = await _client.get(TWELVE_BASE, params=params, timeout=15)
+    r.raise_for_status()
+    j = r.json()
+    if "values" not in j:
+        raise RuntimeError(f"TwelveData: {j.get('message') or 'no series'}")
+    candles = []
+    for v in j["values"]:
+        try:
+            dt = datetime.strptime(v["datetime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            candles.append({
+                "t": to_utc_ms(dt),
+                "o": float(v["open"]),
+                "h": float(v["high"]),
+                "l": float(v["low"]),
+                "c": float(v["close"]),
+            })
+        except Exception:
+            continue
+    if not candles:
+        raise RuntimeError("TwelveData: empty series")
+    last_price = candles[-1]["c"]
+    return candles, last_price
+
+
 async def get_candles(symbol: str):
     key = ("candles", symbol.upper())
     ts_payload = _cache.get(key)
-    if ts_payload and (now_utc_ms() - ts_payload[0] < 15_000):
+    if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
         return ts_payload[1]
     try:
         payload = await fetch_yahoo(symbol)
     except Exception as e_yahoo:
         try:
-            payload = await fetch_stooq(symbol)
-        except Exception as e_stooq:
+            payload = await fetch_twelvedata(symbol)
+        except Exception as e_twelve:
             try:
-                payload = await fetch_alpha(symbol)
-            except Exception as e_alpha:
-                raise RuntimeError(f"Yahoo failed: {e_yahoo}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
+                payload = await fetch_stooq(symbol)
+            except Exception as e_stooq:
+                try:
+                    payload = await fetch_alpha(symbol)
+                except Exception as e_alpha:
+                    raise RuntimeError(f"Yahoo failed: {e_yahoo}; TwelveData failed: {e_twelve}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
