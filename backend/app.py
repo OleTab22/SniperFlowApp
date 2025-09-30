@@ -19,6 +19,7 @@ ALPHA_BASE = "https://www.alphavantage.co/query"
 ALPHA_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
 TWELVE_BASE = "https://api.twelvedata.com/time_series"
 TWELVE_KEY = os.getenv("TWELVEDATA_API_KEY")
+PRICE_SOURCE = os.getenv("PRICE_SOURCE", "auto").lower()  # auto|yahoo|twelvedata|dukascopy|stooq|alpha
 
 app = FastAPI()
 # Allow mobile clients to call the API (adjust origins if you want to restrict)
@@ -329,12 +330,25 @@ async def get_candles(symbol: str):
     ts_payload = _cache.get(key)
     if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
         return ts_payload[1]
+    # Explicit source override via env for diagnostics
+    if PRICE_SOURCE in ("yahoo", "twelvedata", "dukascopy", "stooq", "alpha"):
+        if PRICE_SOURCE == "yahoo":
+            return await fetch_yahoo(symbol)
+        if PRICE_SOURCE == "twelvedata":
+            return await fetch_twelvedata(symbol)
+        if PRICE_SOURCE == "dukascopy":
+            return await fetch_dukascopy(symbol)
+        if PRICE_SOURCE == "stooq":
+            return await fetch_stooq(symbol)
+        if PRICE_SOURCE == "alpha":
+            return await fetch_alpha(symbol)
+
+    # Auto strategy with sanity checks
     try:
         payload = await fetch_yahoo(symbol)
     except Exception as e_yahoo:
         try:
             candles_td, last_td = await fetch_twelvedata(symbol)
-            # Prefer TD quote mid; sanity-check vs TD candle close to avoid stale spikes
             last_sane = last_td
             try:
                 q = await fetch_twelvedata_quote(symbol)
@@ -345,10 +359,9 @@ async def get_candles(symbol: str):
                     candidate = q["last"]
                 if candidate is not None:
                     c_last = candles_td[-1]["c"] if candles_td else candidate
-                    if abs(candidate - c_last) <= 5.0:  # within $5 → accept
+                    if abs(candidate - c_last) <= 5.0:
                         last_sane = candidate
                     else:
-                        # Try Dukascopy if TD quote looks off
                         try:
                             payload = await fetch_dukascopy(symbol)
                             _cache[key] = (now_utc_ms(), payload)
