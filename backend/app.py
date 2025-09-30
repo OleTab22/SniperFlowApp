@@ -10,6 +10,8 @@ from typing import Optional, Tuple, Dict, Any
 import csv
 from io import StringIO
 import math
+import lzma
+import struct
 
 NY = pytz.timezone("America/New_York")
 YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
@@ -266,6 +268,62 @@ async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
         "last": _to_f(j.get("price") or j.get("close")),
     }
 
+
+async def fetch_dukascopy(symbol: str, hours_back: int = 30):
+    instr = symbol.upper()
+    if instr != "XAUUSD":
+        raise RuntimeError("Dukascopy fallback implemented for XAUUSD only")
+    now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    ticks = []
+
+    async def fetch_hour(dt_hour: datetime):
+        base = "https://datafeed.dukascopy.com/datafeed"
+        yyyy = dt_hour.year
+        mm0 = dt_hour.month - 1  # zero-based month
+        dd = dt_hour.day
+        hh = dt_hour.hour
+        url = f"{base}/{instr}/{yyyy:04d}/{mm0:02d}/{dd:02d}/{hh:02d}h_ticks.bi5"
+        r = await _client.get(url, timeout=15)
+        if r.status_code != 200 or not r.content:
+            return
+        try:
+            raw = lzma.decompress(r.content)
+        except Exception:
+            return
+        rec = 20
+        for i in range(0, len(raw) - (len(raw) % rec), rec):
+            try:
+                tms, ask, bid, av, bv = struct.unpack(">Iffff", raw[i:i+rec])
+            except Exception:
+                continue
+            ts_ms = int(dt_hour.timestamp() * 1000) + int(tms)
+            mid = (ask + bid) / 2.0
+            ticks.append((ts_ms, mid))
+
+    # Fetch newest to oldest so we can early stop when enough data
+    for h in range(hours_back):
+        await fetch_hour(now_utc - timedelta(hours=h))
+
+    if not ticks:
+        raise RuntimeError("Dukascopy: empty series")
+    ticks.sort(key=lambda x: x[0])
+
+    # Aggregate to 1-minute OHLC
+    by_minute: Dict[int, Dict[str, float]] = {}
+    last_price = ticks[-1][1]
+    for ts, price in ticks:
+        m = (ts // 60000) * 60000
+        b = by_minute.get(m)
+        if not b:
+            by_minute[m] = {"o": price, "h": price, "l": price, "c": price}
+        else:
+            b["h"] = max(b["h"], price)
+            b["l"] = min(b["l"], price)
+            b["c"] = price
+    minutes_sorted = sorted(by_minute.items(), key=lambda x: x[0])
+    candles = [{"t": m, "o": v["o"], "h": v["h"], "l": v["l"], "c": v["c"]} for m, v in minutes_sorted]
+    return candles, last_price
+
 async def get_candles(symbol: str):
     key = ("candles", symbol.upper())
     ts_payload = _cache.get(key)
@@ -276,7 +334,6 @@ async def get_candles(symbol: str):
     except Exception as e_yahoo:
         try:
             payload = await fetch_twelvedata(symbol)
-            # Verify last price using dedicated price endpoint
             try:
                 last_override = await fetch_twelvedata_price(symbol)
                 payload = (payload[0], last_override)
@@ -284,12 +341,15 @@ async def get_candles(symbol: str):
                 pass
         except Exception as e_twelve:
             try:
-                payload = await fetch_stooq(symbol)
-            except Exception as e_stooq:
+                payload = await fetch_dukascopy(symbol)
+            except Exception as e_duka:
                 try:
-                    payload = await fetch_alpha(symbol)
-                except Exception as e_alpha:
-                    raise RuntimeError(f"Yahoo failed: {e_yahoo}; TwelveData failed: {e_twelve}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
+                    payload = await fetch_stooq(symbol)
+                except Exception as e_stooq:
+                    try:
+                        payload = await fetch_alpha(symbol)
+                    except Exception as e_alpha:
+                        raise RuntimeError(f"Yahoo failed: {e_yahoo}; TwelveData failed: {e_twelve}; Dukascopy failed: {e_duka}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
