@@ -333,12 +333,31 @@ async def get_candles(symbol: str):
         payload = await fetch_yahoo(symbol)
     except Exception as e_yahoo:
         try:
-            payload = await fetch_twelvedata(symbol)
+            candles_td, last_td = await fetch_twelvedata(symbol)
+            # Prefer TD quote mid; sanity-check vs TD candle close to avoid stale spikes
+            last_sane = last_td
             try:
-                last_override = await fetch_twelvedata_price(symbol)
-                payload = (payload[0], last_override)
+                q = await fetch_twelvedata_quote(symbol)
+                candidate = None
+                if q.get("bid") and q.get("ask"):
+                    candidate = (q["bid"] + q["ask"]) / 2.0
+                elif q.get("last"):
+                    candidate = q["last"]
+                if candidate is not None:
+                    c_last = candles_td[-1]["c"] if candles_td else candidate
+                    if abs(candidate - c_last) <= 5.0:  # within $5 → accept
+                        last_sane = candidate
+                    else:
+                        # Try Dukascopy if TD quote looks off
+                        try:
+                            payload = await fetch_dukascopy(symbol)
+                            _cache[key] = (now_utc_ms(), payload)
+                            return payload
+                        except Exception:
+                            pass
             except Exception:
                 pass
+            payload = (candles_td, last_sane)
         except Exception as e_twelve:
             try:
                 payload = await fetch_dukascopy(symbol)
