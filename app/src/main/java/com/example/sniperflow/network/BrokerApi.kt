@@ -23,6 +23,12 @@ interface BrokerApi {
 
     @GET("calendar/upcoming")
     suspend fun upcoming(@Query("ccy") ccy: String = "USD", @Query("hours") hours: Int = 72): CalendarResponse
+
+    @GET("home")
+    suspend fun home(): HomeResponse
+
+    @GET("health")
+    suspend fun health(): Map<String, String>
 }
 
 

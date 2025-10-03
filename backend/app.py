@@ -539,10 +539,11 @@ async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
         "next_red": {
             "title": f"{ccy} CPI",
             "impact": "high",
-            "time_utc": datetime.utcfromtimestamp(event_time / 1000).replace(tzinfo=timezone.utc).isoformat(),
+            # App expects epoch seconds as a string
+            "time_utc": str(int(event_time // 1000)),
             "lock_window": {
-                "start_utc": datetime.utcfromtimestamp((event_time - 15*60*1000) / 1000).replace(tzinfo=timezone.utc).isoformat(),
-                "end_utc": datetime.utcfromtimestamp((event_time + 15*60*1000) / 1000).replace(tzinfo=timezone.utc).isoformat(),
+                "start_utc": str(int((event_time - 15*60*1000) // 1000)),
+                "end_utc": str(int((event_time + 15*60*1000) // 1000)),
             }
         }
     }
@@ -601,19 +602,22 @@ async def home():
         l = [c["l"] for c in candles]
         cvals = [c["c"] for c in candles]
 
-        # 24h window stats
+        # Current day (SAST) window stats
         end_ms = now_utc_ms()
-        start_ms = end_ms - 24 * 60 * 60 * 1000
-        win = [i for i, t in enumerate(ts) if t >= start_ms]
-        if win:
-            i0 = win[0]
+        tz_sast = pytz.timezone("Africa/Johannesburg")
+        now_local = datetime.now(tz_sast)
+        midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight_ms = int(midnight_local.astimezone(timezone.utc).timestamp() * 1000)
+        day_idx = [i for i, t in enumerate(ts) if t >= midnight_ms]
+        if day_idx:
+            d0 = day_idx[0]
         else:
-            i0 = max(0, len(ts) - 1)
-        high24 = max(h[i0:]) if i0 < len(h) else None
-        low24 = min(l[i0:]) if i0 < len(l) else None
-        base = cvals[i0] if i0 < len(cvals) and cvals[i0] else None
-        change24 = (last_price - base) if (base is not None) else None
-        pct24 = ((change24 / base) * 100.0) if (base and base != 0) else None
+            d0 = max(0, len(ts) - 1)
+        high_day = max(h[d0:]) if d0 < len(h) else None
+        low_day = min(l[d0:]) if d0 < len(l) else None
+        base_do = o[d0] if d0 < len(o) else None
+        change_day = (last_price - base_do) if (base_do is not None) else None
+        pct_day = ((change_day / base_do) * 100.0) if (base_do and base_do != 0) else None
 
         # SAST DO
         do_price = _find_sast_midnight_open(candles)
@@ -624,41 +628,257 @@ async def home():
         tnx = await _fetch_intraday_yf_series("^TNX")
         drivers = []
         if dxy:
-            drivers.append({"key": "dxyZ", "value": _z_from_tail([c["c"] for c in dxy["candles"]])})
+            last_ts = dxy["candles"][-1]["t"] if dxy["candles"] else 0
+            stale = (end_ms - last_ts) > (10 * 60 * 1000)
+            drivers.append({"key": "dxyZ", "value": _z_from_tail([c["c"] for c in dxy["candles"]]), "stale": stale})
         if tnx:
-            drivers.append({"key": "realZ", "value": _z_from_tail([c["c"] / 10.0 for c in tnx["candles"]])})
+            last_ts = tnx["candles"][-1]["t"] if tnx["candles"] else 0
+            stale = (end_ms - last_ts) > (10 * 60 * 1000)
+            drivers.append({"key": "realZ", "value": _z_from_tail([c["c"] / 10.0 for c in tnx["candles"]]), "stale": stale})
         if vix:
-            drivers.append({"key": "vixZ", "value": _z_from_tail([c["c"] for c in vix["candles"]])})
+            last_ts = vix["candles"][-1]["t"] if vix["candles"] else 0
+            stale = (end_ms - last_ts) > (10 * 60 * 1000)
+            drivers.append({"key": "vixZ", "value": _z_from_tail([c["c"] for c in vix["candles"]]), "stale": stale})
 
         # Calendar next red using existing stub
         cal = await calendar_upcoming("USD", 72)
 
+        # Intraday high/low since local SAST midnight for range_to_atr20 and other metrics
+        try:
+            intraday = [c for c in candles if c["t"] >= midnight_ms]
+            intraday_hi = max((c["h"] for c in intraday), default=None)
+            intraday_lo = min((c["l"] for c in intraday), default=None)
+            intraday_range = (intraday_hi - intraday_lo) if (intraday_hi is not None and intraday_lo is not None) else None
+        except Exception:
+            intraday_range = None
+
+        # Range-to-ATR20 proxy: use 1% of last price as ATR20 approximation to keep values in a familiar range
+        range_to_atr20 = None
+        if intraday_range is not None and last_price:
+            atr20_proxy = max(1e-9, 0.01 * float(last_price))
+            range_to_atr20 = float(intraday_range) / atr20_proxy
+
+        # Activity index proxy: logistic on z-score of absolute minute returns within current SAST day
+        try:
+            closes_day = [c["c"] for c in intraday]
+            rets = []
+            for i in range(1, len(closes_day)):
+                a = closes_day[i-1]
+                b = closes_day[i]
+                if a:
+                    rets.append(abs((b - a) / a))
+            raw_z = _z_from_tail(rets, lookback=240)
+            activity_index = 1.0 / (1.0 + math.exp(-2.0 * raw_z))
+        except Exception:
+            activity_index = None
+
+        # Volume percentile proxy: percentile of latest 5-min realized volatility vs today's distribution
+        volume_percentile = None
+        try:
+            closes_day = [c["c"] for c in intraday]
+            if len(closes_day) >= 7:
+                # compute windowed RV over 5-minute rolling windows
+                def _rv5(window):
+                    rets = []
+                    for i in range(1, len(window)):
+                        a = window[i-1]
+                        b = window[i]
+                        if a:
+                            rets.append((b - a) / a)
+                    if not rets:
+                        return 0.0
+                    m = sum(rets) / len(rets)
+                    var = sum((r - m) * (r - m) for r in rets) / max(1, len(rets) - 1)
+                    return math.sqrt(var)
+                rv_vals = []
+                for i in range(5, len(closes_day)):
+                    rv_vals.append(_rv5(closes_day[i-5:i+1]))
+                if rv_vals:
+                    cur = rv_vals[-1]
+                    below_eq = len([x for x in rv_vals if x <= cur])
+                    volume_percentile = int((below_eq / len(rv_vals)) * 100.0)
+        except Exception:
+            volume_percentile = None
+
+        # Session-aware PDH/PDL (previous session high/low using 17:00 ET anchor)
+        nyt = ny_now()
+        anchor = session_day_anchor(nyt)
+        prev_start = anchor - timedelta(days=1)
+        prev_end = anchor
+        prev_window = filter_candles(candles, to_utc_ms(prev_start), to_utc_ms(prev_end))
+        prev_levels = compute_levels_for_window(prev_window)
+
+        # Simple nowcast based on driver z-scores (logistic transform)
+        dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
+        real_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "realZ"), 0.0)
+        vix_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "vixZ"), 0.0)
+        # Momentum driver based on today's move vs intraday range
+        mom = 0.0
+        try:
+            if intraday_range and intraday_range > 0 and base_do is not None:
+                mom = (float(last_price) - float(base_do)) / float(intraday_range)
+                mom = max(-1.0, min(1.0, mom))
+        except Exception:
+            mom = 0.0
+        # Mirror signs similar to client-side model
+        real_z_c = max(-1.5, min(1.5, -real_z))
+        dxy_z_c = -dxy_z
+        vix_z_c = vix_z
+        term_dxy = 0.60 * dxy_z_c
+        term_real = 0.20 * real_z_c
+        term_vix = 0.20 * vix_z_c
+        term_mom = 0.30 * mom
+        logit = 0.0 + term_dxy + term_real + term_vix + term_mom
+        p_up = 1.0 / (1.0 + math.exp(-logit))
+        direction = "bull" if p_up >= 0.5 else "bear"
+        confidence = max(p_up, 1.0 - p_up)
+
+        # Add contribution fractions for driver chips
+        sum_abs = sum(abs(x) for x in (term_dxy, term_real, term_vix, term_mom)) or 1.0
+        for d in drivers:
+            if d["key"] == "dxyZ":
+                d["contribution"] = term_dxy / sum_abs
+            elif d["key"] == "realZ":
+                d["contribution"] = term_real / sum_abs
+            elif d["key"] == "vixZ":
+                d["contribution"] = term_vix / sum_abs
+        drivers.append({"key": "mom", "value": mom, "stale": False, "contribution": term_mom / sum_abs})
+
+        # Quote for bid/ask and spread/quality
+        bid = None
+        ask = None
+        spread_pts = None
+        try:
+            q = await fetch_twelvedata_quote("XAUUSD")
+            bid = q.get("bid")
+            ask = q.get("ask")
+            if bid and ask:
+                last_price = (bid + ask) / 2.0
+                spread = max(0.0, float(ask) - float(bid))
+                spread_pts = int(round(spread * 100))  # ~0.01 per point
+        except Exception:
+            pass
+
+        # Quality state from spread/latency (best effort)
+        latency_ms = 0
+        if spread_pts is not None:
+            if spread_pts <= 20 and latency_ms <= 300:
+                q_state = "OK"
+            elif spread_pts <= 30 and latency_ms <= 600:
+                q_state = "DEGRADED"
+            else:
+                q_state = "POOR"
+        else:
+            q_state = "OK"
+
+        # News lock from calendar
+        news_lock = False
+        try:
+            if isinstance(cal, dict):
+                nr = cal.get("next_red")
+                if nr and nr.get("lock_window"):
+                    start_s = int(nr["lock_window"]["start_utc"]) if isinstance(nr["lock_window"]["start_utc"], str) else nr["lock_window"]["start_utc"]
+                    end_s = int(nr["lock_window"]["end_utc"]) if isinstance(nr["lock_window"]["end_utc"], str) else nr["lock_window"]["end_utc"]
+                    now_s = int(end_ms // 1000)
+                    news_lock = (now_s >= start_s and now_s <= end_s)
+        except Exception:
+            news_lock = False
+
+        # Current session (SAST): asia 01:00–09:00, london 09:00–13:00, newyork 14:30–18:00
+        try:
+            tz = pytz.timezone("Africa/Johannesburg")
+            now_cal = datetime.now(tz)
+            m = now_cal.hour * 60 + now_cal.minute
+            current_session = None
+            if 60 <= m < 540:
+                current_session = "asia"
+            elif 540 <= m < 780:
+                current_session = "london"
+            elif 870 <= m < 1080:
+                current_session = "newyork"
+            else:
+                current_session = None
+        except Exception:
+            current_session = None
+
         payload = {
             "price": {
                 "last": last_price,
-                "change24h": change24,
-                "pct24h": pct24,
-                "high24h": high24,
-                "low24h": low24,
+                # These fields are computed for current SAST day
+                "change24h": change_day,
+                "pct24h": pct_day,
+                "high24h": high_day,
+                "low24h": low_day,
                 "updatedAt": end_ms,
+                "closes": [c["c"] for c in intraday] if 'intraday' in locals() else None,
+                "bid": bid,
+                "ask": ask,
             },
             "levels": {
                 "do": {"price": do_price},
-                "pdh": {"price": max(h) if h else None},
-                "pdl": {"price": min(l) if l else None},
+                # Previous session high/low
+                "pdh": {"price": prev_levels["PDH"]},
+                "pdl": {"price": prev_levels["PDL"]},
             },
             "metrics": {
                 "gap_pct": ((last_price - do_price) / do_price * 100.0) if (do_price and do_price != 0) else None,
+                "range_to_atr20": range_to_atr20,
+                "volume_percentile": volume_percentile,
+                "activity_index": activity_index,
                 "nowcast": {
-                    "drivers": drivers,
+                    "direction": direction,
+                    "confidence": confidence,
+                    "window_min": 60,
+                    "drivers": drivers + [{"key": "mom", "value": mom}],
                     "model_id": "stub-000",
                     "updated_at": end_ms,
                 },
             },
             "calendar": {"next_red": cal.get("next_red")} if isinstance(cal, dict) else {},
-            "quality": {"state": "OK"},
+            "sessions": {"overlap_with_ny": (8 <= ny_now().hour < 12), "current": current_session},
+            "quality": {"state": q_state, "spread_pts": spread_pts, "latency_ms": latency_ms},
+            "gates": {"plan_lock": False, "reason": None, "news_lock": news_lock},
         }
         return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# ---------------- WebSocket for Ticks (best-effort) ----------------
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ticks")
+async def ws_ticks(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            ts_ms = now_utc_ms()
+            bid = None
+            ask = None
+            last = None
+            try:
+                q = await fetch_twelvedata_quote("XAUUSD")
+                bid = q.get("bid")
+                ask = q.get("ask")
+                last = q.get("last")
+            except Exception:
+                try:
+                    _candles, last_p = await get_candles("XAUUSD")
+                    last = last_p
+                except Exception:
+                    last = None
+            if last is not None and (bid is None or ask is None):
+                # synthesize a tiny spread if missing
+                spread = max(0.05, 0.0005 * float(last))
+                bid = float(last) - spread / 2.0
+                ask = float(last) + spread / 2.0
+            payload = {"ts": ts_ms}
+            if bid is not None:
+                payload["bid"] = float(bid)
+            if ask is not None:
+                payload["ask"] = float(ask)
+            await ws.send_json(payload)
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        return
 
