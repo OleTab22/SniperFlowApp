@@ -15,6 +15,42 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+        <!-- Top App Bar -->
+        <LinearLayout
+            android:id="@+id/topBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+            <TextView
+                android:id="@+id/titleText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="SniperFlow"
+                android:textSize="18sp" />
+            <View
+                android:id="@+id/viewConnStatus"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="12dp"
+                android:background="#16A34A" />
+            <ImageView
+                android:id="@+id/btnNotifications"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="12dp"
+                android:contentDescription="Notifications"
+                android:src="@android:drawable/ic_dialog_info" />
+            <ImageView
+                android:id="@+id/btnSettings"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Settings"
+                android:src="@android:drawable/ic_menu_preferences" />
+        </LinearLayout>
+
         <!-- Live Price Panel -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/livePriceCard"
@@ -119,6 +155,18 @@
                     <TextView android:id="@+id/high24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="H24 —" />
                     <TextView android:id="@+id/low24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="L24 —" />
                 </LinearLayout>
+
+                <TextView
+                    android:id="@+id/chipQuality"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Quality OK"
+                    android:background="@drawable/bg_chip"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -221,6 +269,19 @@
                     android:text="Fix times shown on chart."
                     android:textSize="12sp"
                     android:layout_marginTop="6dp" />
+
+                <TextView
+                    android:id="@+id/badgeOverlap"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:background="@drawable/bg_chip"
+                    android:text="Overlap active"
+                    android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -267,6 +328,29 @@
                     android:text="US CPI in 42m (High)" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Plan-Lock Banner -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/bannerPlanLock"
+            android:visibility="gone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+    <TextView
+                android:id="@+id/tvBannerText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="12dp"
+                android:text="Your plan is protecting you. New entries locked."
+                android:textSize="14sp" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Alerts list (last 3) -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/listAlerts"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp" />
 
         <!-- Quick Actions -->
         <LinearLayout

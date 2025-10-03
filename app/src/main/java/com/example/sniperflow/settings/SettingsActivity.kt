@@ -27,8 +27,9 @@ class SettingsActivity : AppCompatActivity() {
         val cooldownInput = findViewById<TextInputEditText>(R.id.cooldownInput)
         val saveBtn = findViewById<android.view.View>(R.id.saveBtn)
 
-        // Optional: quick Test connection button if present
-        val testBtn = try { findViewById<Button>(R.id.btnTest) } catch (t: Throwable) { null }
+        // Optional: quick Test connection button if present (resolve by name to avoid compile-time R error)
+        val testId = resources.getIdentifier("btnTest", "id", packageName)
+        val testBtn = if (testId != 0) findViewById<Button>(testId) else null
 
         val (savedEpsilon, savedCooldown) = repository.load()
         epsilonInput.setText(savedEpsilon.toString())
