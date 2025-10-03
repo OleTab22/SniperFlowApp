@@ -269,6 +269,7 @@ class MainActivity : AppCompatActivity() {
                         val sdf = SimpleDateFormat("HH:mm:ss"); sdf.timeZone = TimeZone.getDefault()
                         updatedText.text = "Updated ${sdf.format(java.util.Date(it))}"
                     }
+                    p.closes?.let { miniChart.setSeries(it) }
                 }
                 // Connection healthy
                 setConnStatusGreen()
@@ -378,7 +379,7 @@ class MainActivity : AppCompatActivity() {
                         PDL = home.levels?.pdl?.price,
                         high24h = home.price?.high24h,
                         low24h = home.price?.low24h,
-                        closes = null
+                        closes = home.price?.closes
                     )
                     saveHomeCache(cache)
                 }
