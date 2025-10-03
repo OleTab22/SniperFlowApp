@@ -294,12 +294,24 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 30):
         rec = 20
         for i in range(0, len(raw) - (len(raw) % rec), rec):
             try:
-                tms, ask, bid, av, bv = struct.unpack(">Iffff", raw[i:i+rec])
+                # Dukascopy stores 5 big-endian 32-bit integers
+                # [ms, ask_int, bid_int, ask_vol_int, bid_vol_int]
+                tms, ask_i, bid_i, _av_i, _bv_i = struct.unpack(">IIIII", raw[i:i+rec])
             except Exception:
                 continue
             ts_ms = int(dt_hour.timestamp() * 1000) + int(tms)
-            mid = (ask + bid) / 2.0
-            ticks.append((ts_ms, mid))
+            # Detect scale to bring price into realistic gold range
+            mid_i = (ask_i + bid_i) / 2.0
+            price = None
+            for s in (100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0):
+                v = mid_i / s
+                if 500.0 <= v <= 10000.0:
+                    price = v
+                    break
+            if price is None:
+                # Fallback: assume 1000 scale for metals
+                price = mid_i / 1000.0
+            ticks.append((ts_ms, float(price)))
 
     # Fetch newest to oldest so we can early stop when enough data
     for h in range(hours_back):

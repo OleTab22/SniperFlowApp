@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">SniperFlow</string>
-    <string name="base_url">http://10.0.2.2:8787/</string>
+    <string name="base_url">https://sniperflow-api.onrender.com/</string>
 </resources>
