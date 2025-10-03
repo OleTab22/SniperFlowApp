@@ -25,11 +25,19 @@ import java.time.Instant
 import android.content.SharedPreferences
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import androidx.recyclerview.widget.RecyclerView
+import com.example.sniperflow.ui.home.AlertsAdapter
+import android.widget.ImageView
+import android.graphics.drawable.GradientDrawable
+import android.widget.Toast
+import okhttp3.OkHttpClient
+import com.example.sniperflow.network.PriceWsClient
 
 class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
     private var periodicJob: Job? = null
     private var lastRefreshAt: Long = 0L
+    private var wsClient: PriceWsClient? = null
 
     // Simple cache for fast first paint
     private data class HomeCache(
@@ -67,6 +75,14 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.fabAdd)?.setOnClickListener { v ->
             Snackbar.make(v, "Add: journal or alert", Snackbar.LENGTH_SHORT).show()
+        }
+
+        // Top bar actions
+        findViewById<ImageView>(R.id.btnSettings)?.setOnClickListener {
+            startActivity(Intent(this, com.example.sniperflow.settings.SettingsActivity::class.java))
+        }
+        findViewById<ImageView>(R.id.btnNotifications)?.setOnClickListener {
+            startActivity(Intent(this, com.example.sniperflow.notifications.NotificationsActivity::class.java))
         }
 
         // Pull-to-refresh
@@ -108,8 +124,32 @@ class MainActivity : AppCompatActivity() {
                 if (now - lastRefreshAt >= cooldownMs) {
                     fetchAndRender()
                 }
+                // ping health every loop to keep connection dot fresh
+                runCatching {
+                    val ok = RetrofitModule.api(BuildConfig.BASE_URL).health()
+                    if (ok["status"] == "ok") setConnStatusGreen() else setConnStatusAmber()
+                }.onFailure { setConnStatusRed() }
                 delay(5_000)
             }
+        }
+
+        // Start WS ticks if backend provides it (optional). If not available, this is harmless.
+        runCatching {
+            val url = BuildConfig.BASE_URL.replace("http", "ws") + "ticks"
+            wsClient = PriceWsClient(OkHttpClient(), url,
+                onTick = { ts, bid, ask ->
+                    // Update connection dot and maybe compute quality (latency/spread) later
+                    setConnStatusGreen()
+                },
+                onState = { st ->
+                    when (st) {
+                        PriceWsClient.State.CONNECTING -> setConnStatusAmber()
+                        PriceWsClient.State.OPEN -> setConnStatusGreen()
+                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> setConnStatusRed()
+                    }
+                }
+            )
+            wsClient?.start()
         }
     }
 
@@ -139,6 +179,10 @@ class MainActivity : AppCompatActivity() {
         val pillAsia = findViewById<TextView>(R.id.asiaBtn)
         val pillLondon = findViewById<TextView>(R.id.londonBtn)
         val pillNY = findViewById<TextView>(R.id.newyorkBtn)
+
+        val alertsList = findViewById<RecyclerView>(R.id.listAlerts)
+        val alertsAdapter = AlertsAdapter { /* open alert detail */ }
+        alertsList?.adapter = alertsAdapter
 
         fun highlightSessionsSAST() {
             // SAST windows: Asia 01:00–09:00, London 09:00–13:00, New York 14:30–18:00
@@ -173,48 +217,105 @@ class MainActivity : AppCompatActivity() {
 
         highlightSessionsSAST()
 
+        // Session pill tap: show minutes left in SAST
+        fun minutesLeft(endH: Int, endM: Int): Int {
+            val tz = TimeZone.getTimeZone("Africa/Johannesburg")
+            val now = java.util.Calendar.getInstance(tz)
+            val end = java.util.Calendar.getInstance(tz)
+            end.set(java.util.Calendar.HOUR_OF_DAY, endH)
+            end.set(java.util.Calendar.MINUTE, endM)
+            end.set(java.util.Calendar.SECOND, 0)
+            end.set(java.util.Calendar.MILLISECOND, 0)
+            if (end.before(now)) end.add(java.util.Calendar.DAY_OF_MONTH, 1)
+            val diffMs = end.timeInMillis - now.timeInMillis
+            return (diffMs / 60000L).toInt()
+        }
+
+        pillAsia?.setOnClickListener {
+            val mins = minutesLeft(9, 0)
+            Toast.makeText(this, "Asia ends in ${mins}m", Toast.LENGTH_SHORT).show()
+        }
+        pillLondon?.setOnClickListener {
+            val mins = minutesLeft(13, 0)
+            Toast.makeText(this, "London ends in ${mins}m", Toast.LENGTH_SHORT).show()
+        }
+        pillNY?.setOnClickListener {
+            val mins = minutesLeft(18, 0)
+            Toast.makeText(this, "New York ends in ${mins}m", Toast.LENGTH_SHORT).show()
+        }
+
         val swipe = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipe)
         swipe?.isRefreshing = true
+        // Connection dot: set amber while loading
+        setConnStatusAmber()
         lifecycleScope.launch {
             try {
-                Timber.i("Home: fetching intraday levels…")
-                val intraday = api.levels("XAUUSD")
-                priceText.text = String.format("%.2f", intraday.lastPrice)
-                // Approx percent change vs DO when available
-                val pct = intraday.DO?.let { if (it != 0.0) (intraday.lastPrice - it) / it * 100.0 else 0.0 }
-                changeText.text = pct?.let { String.format("%+.2f%%", it) } ?: "—"
-                pct?.let {
-                    val color = if (it >= 0) ContextCompat.getColor(this@MainActivity, R.color.colorPositive)
-                                 else ContextCompat.getColor(this@MainActivity, R.color.colorNegative)
-                    changeText.setTextColor(color)
+                Timber.i("Home: fetching consolidated payload…")
+                val home = api.home()
+
+                // Price panel
+                home.price?.let { p ->
+                    p.last?.let { priceText.text = String.format("%.2f", it) }
+                    val pct = p.pct24h
+                    changeText.text = pct?.let { String.format("%+.2f%%", it) } ?: "—"
+                    pct?.let {
+                        val color = if (it >= 0) ContextCompat.getColor(this@MainActivity, R.color.colorPositive)
+                        else ContextCompat.getColor(this@MainActivity, R.color.colorNegative)
+                        changeText.setTextColor(color)
+                    }
+                    findViewById<TextView>(R.id.high24Text)?.text = p.high24h?.let { "H24 ${String.format("%.2f", it)}" } ?: "H24 —"
+                    findViewById<TextView>(R.id.low24Text)?.text = p.low24h?.let { "L24 ${String.format("%.2f", it)}" } ?: "L24 —"
+                    p.updatedAt?.let {
+                        val sdf = SimpleDateFormat("HH:mm:ss"); sdf.timeZone = TimeZone.getDefault()
+                        updatedText.text = "Updated ${sdf.format(java.util.Date(it))}"
+                    }
                 }
-                gapText?.text = pct?.let { "Gap ${String.format("%+.2f%%", it)}" } ?: "Gap —"
+                // Connection healthy
+                setConnStatusGreen()
 
-                val sdf = SimpleDateFormat("HH:mm:ss")
-                sdf.timeZone = TimeZone.getDefault()
-                updatedText.text = "Updated ${sdf.format(java.util.Date(intraday.asOf))}"
+                // Metrics chips
+                home.metrics?.let { m ->
+                    val gap = m.gapPct
+                    gapText?.text = gap?.let { "Gap ${String.format("%+.2f%%", it)}" } ?: "Gap —"
+                    findViewById<TextView>(R.id.rangeText)?.text = m.rangeToAtr20?.let { "Range ${String.format("%.2f", it)}×ATR20" } ?: "Range —"
+                    findViewById<TextView>(R.id.volumeText)?.text = m.volumePercentile?.let { "Volume ${it}p" } ?: "Volume —"
+                    findViewById<TextView>(R.id.activityText)?.text = m.activityIndex?.let { "Activity ${String.format("%.2f", it)}" } ?: "Activity —"
+                    findViewById<TextView>(R.id.nowcastText)?.text = m.nowcast?.let { nc ->
+                        val conf = nc.confidence?.let { String.format("%.0f", it * 100) } ?: "-"
+                        "Nowcast ${conf}% (★) · ${nc.windowMin ?: 60}m"
+                    } ?: "Nowcast —"
+                }
 
-                doVal.text = "DO ${intraday.DO?.let { String.format("%.2f", it) } ?: "-"}"
-                pdhVal.text = "PDH ${intraday.PDH?.let { String.format("%.2f", it) } ?: "-"}"
-                pdlVal.text = "PDL ${intraday.PDL?.let { String.format("%.2f", it) } ?: "-"}"
+                // Quality chip
+                home.quality?.let { q ->
+                    val view = findViewById<TextView>(R.id.chipQuality)
+                    view?.text = when ((q.state ?: "OK").uppercase()) {
+                        "OK" -> "Quality OK"
+                        "DEGRADED" -> "Quality Degraded"
+                        else -> "Quality Poor"
+                    }
+                }
 
-                // Simple bias estimation from DO distance
-                intraday.DO?.let { doPrice ->
-                    val delta = intraday.lastPrice - doPrice
-                    val pctMove = if (doPrice != 0.0) delta / doPrice else 0.0
-                    val direction = if (pctMove >= 0) BiasRingView.Direction.BULL else BiasRingView.Direction.BEAR
-                    // map |pctMove| to confidence 0..1 over a 2% move window
-                    val confidence = kotlin.math.min(kotlin.math.abs(pctMove) / 0.02, 1.0)
-                    biasRing.setData(confidence.toFloat(), direction)
-                    biasTitle.text = "Bias: ${if (direction == BiasRingView.Direction.BULL) "Bull" else "Bear"}"
-                    biasConfidence.text = "Conf. ${String.format("%.0f", confidence * 100)}%"
+                // Levels row
+                home.levels?.let { lv ->
+                    doVal.text = "DO ${lv.doLevel?.price?.let { String.format("%.2f", it) } ?: "-"}"
+                    pdhVal.text = "PDH ${lv.pdh?.price?.let { String.format("%.2f", it) } ?: "-"}"
+                    pdlVal.text = "PDL ${lv.pdl?.price?.let { String.format("%.2f", it) } ?: "-"}"
+                }
 
-                    // Driver chips (sign-colored)
+                // Bias from nowcast
+                home.metrics?.nowcast?.let { nc ->
+                    val conf = (nc.confidence ?: 0.0).coerceIn(0.0, 1.0)
+                    val dir = if ((nc.direction ?: "").lowercase() == "bull") BiasRingView.Direction.BULL else BiasRingView.Direction.BEAR
+                    biasRing.setData(conf.toFloat(), dir)
+                    biasTitle.text = "Bias: ${if (dir == BiasRingView.Direction.BULL) "Bull" else "Bear"}"
+                    biasConfidence.text = "Conf. ${String.format("%.0f", conf * 100)}%"
                     driversFlex.removeAllViews()
-                    fun addChip(label: String, value: Double) {
+                    nc.drivers?.take(4)?.forEach { d ->
                         val tv = TextView(this@MainActivity)
-                        tv.text = "$label ${if (value >= 0) "+" else ""}${String.format("%.1f", value)}"
-                        val color = if (value >= 0) R.color.colorPositive else R.color.colorNegative
+                        val v = d.value ?: 0.0
+                        tv.text = "${d.key ?: ""} ${if (v >= 0) "+" else ""}${String.format("%.1f", v)}"
+                        val color = if (v >= 0) R.color.colorPositive else R.color.colorNegative
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, color))
                         tv.setPadding(16, 10, 16, 10)
                         tv.background = resources.getDrawable(R.drawable.bg_chip, theme)
@@ -226,68 +327,65 @@ class MainActivity : AppCompatActivity() {
                         tv.layoutParams = lp
                         driversFlex.addView(tv)
                     }
-                    // Illustrative mapping from pct move
-                    addChip("realZ", pctMove * 3.0)
-                    addChip("dxyZ", -pctMove * 2.0)
-                    addChip("cotZ", pctMove * 1.5)
                 }
 
-                Timber.i("Home: fetching session levels…")
-                val sessions = api.levelsSessions("XAUUSD")
-                // Optionally reflect daily nowcast text using daily levels
-                dailyText.text = "Sessions loaded"
-
-                // 24h OHLC + sparkline
-                runCatching {
-                    val d = api.ohlc24h("XAUUSD")
-                    findViewById<TextView>(R.id.high24Text)?.text = "H24 ${String.format("%.2f", d.high24h)}"
-                    findViewById<TextView>(R.id.low24Text)?.text = "L24 ${String.format("%.2f", d.low24h)}"
-                    miniChart.setSeries(d.closes)
-
-                    // Save cache
-                    saveHomeCache(
-                        HomeCache(
-                            asOf = intraday.asOf,
-                            last = intraday.lastPrice,
-                            DO = intraday.DO,
-                            PDH = intraday.PDH,
-                            PDL = intraday.PDL,
-                            high24h = d.high24h,
-                            low24h = d.low24h,
-                            closes = d.closes
-                        )
-                    )
+                // Sessions overlap badge
+                home.sessions?.let { s ->
+                    val badge = findViewById<TextView>(R.id.badgeOverlap)
+                    badge?.visibility = if (s.overlapWithNy == true) View.VISIBLE else View.GONE
                 }
 
-                // Upcoming event pill and countdown
-                runCatching {
-                    val cal = api.upcoming("USD", 72)
-                    val event = cal.next_red ?: return@runCatching
+                // News/countdown
+                home.calendar?.nextRed?.let { event ->
                     val pill = findViewById<TextView>(R.id.eventText)
                     pill.visibility = View.VISIBLE
-
                     countdownJob?.cancel()
                     countdownJob = lifecycleScope.launch {
                         while (isActive) {
-                            val targetMs = Instant.parse(event.time_utc).toEpochMilli()
-                            val mins = ((targetMs - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
-                            pill.text = "${event.title} in ${mins}m (${event.impact.replaceFirstChar { it.uppercase() }})"
-                            // Highlight when in lock window
-                            event.lock_window?.let { lw ->
-                                val start = Instant.parse(lw.start_utc).toEpochMilli()
-                                val end = Instant.parse(lw.end_utc).toEpochMilli()
-                                val now = System.currentTimeMillis()
-                                val inLock = now in start..end
-                                pill.background = ContextCompat.getDrawable(this@MainActivity,
-                                    if (inLock) R.drawable.bg_news_red else R.drawable.bg_chip)
+                            runCatching {
+                                val targetMs = Instant.ofEpochSecond((event.time_utc?.toLong() ?: 0L)).toEpochMilli()
+                                val mins = ((targetMs - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
+                                pill.text = "${event.title} in ${mins}m (${event.impact.replaceFirstChar { it.uppercase() }})"
+                                event.lock_window?.let { lw ->
+                                    val start = Instant.ofEpochSecond((lw.start_utc?.toLong() ?: 0L)).toEpochMilli()
+                                    val end = Instant.ofEpochSecond((lw.end_utc?.toLong() ?: 0L)).toEpochMilli()
+                                    val now = System.currentTimeMillis()
+                                    val inLock = now in start..end
+                                    pill.background = ContextCompat.getDrawable(this@MainActivity,
+                                        if (inLock) R.drawable.bg_news_red else R.drawable.bg_chip)
+                                }
                             }
                             delay(1000)
                         }
                     }
                 }
 
+                // Alerts
+                home.alerts?.let { list -> alertsAdapter.submitList(list.take(3)) }
+
+                // Plan-Lock banner
+                val locked = (home.gates?.planLock == true)
+                findViewById<View>(R.id.bannerPlanLock)?.visibility = if (locked) View.VISIBLE else View.GONE
+                if (locked) findViewById<TextView>(R.id.tvBannerText)?.text = home.gates?.reason ?: "Your plan is protecting you. New entries locked."
+
+                // Save lightweight cache for fast first paint next launch
+                runCatching {
+                    val cache = HomeCache(
+                        asOf = home.price?.updatedAt ?: System.currentTimeMillis(),
+                        last = home.price?.last ?: 0.0,
+                        DO = home.levels?.doLevel?.price,
+                        PDH = home.levels?.pdh?.price,
+                        PDL = home.levels?.pdl?.price,
+                        high24h = home.price?.high24h,
+                        low24h = home.price?.low24h,
+                        closes = null
+                    )
+                    saveHomeCache(cache)
+                }
+
             } catch (t: Throwable) {
                 Timber.e(t, "Home fetch failed")
+                setConnStatusRed()
                 findViewById<View>(R.id.livePriceCard)?.let {
                     Snackbar.make(it, t.message ?: "Failed to load", Snackbar.LENGTH_LONG).show()
                 }
@@ -331,4 +429,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.high24Text)?.text = c.high24h?.let { "H24 ${String.format("%.2f", it)}" } ?: "H24 —"
         findViewById<TextView>(R.id.low24Text)?.text = c.low24h?.let { "L24 ${String.format("%.2f", it)}" } ?: "L24 —"
     }
+
+    private fun setConnStatus(colorHex: String) {
+        val dot = findViewById<View>(R.id.viewConnStatus) ?: return
+        val bg = GradientDrawable()
+        bg.shape = GradientDrawable.OVAL
+        bg.setColor(android.graphics.Color.parseColor(colorHex))
+        dot.background = bg
+    }
+    private fun setConnStatusGreen() = setConnStatus("#16A34A")
+    private fun setConnStatusAmber() = setConnStatus("#F59E0B")
+    private fun setConnStatusRed() = setConnStatus("#DC2626")
 }

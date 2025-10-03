@@ -539,10 +539,11 @@ async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
         "next_red": {
             "title": f"{ccy} CPI",
             "impact": "high",
-            "time_utc": datetime.utcfromtimestamp(event_time / 1000).replace(tzinfo=timezone.utc).isoformat(),
+            # App expects epoch seconds as a string
+            "time_utc": str(int(event_time // 1000)),
             "lock_window": {
-                "start_utc": datetime.utcfromtimestamp((event_time - 15*60*1000) / 1000).replace(tzinfo=timezone.utc).isoformat(),
-                "end_utc": datetime.utcfromtimestamp((event_time + 15*60*1000) / 1000).replace(tzinfo=timezone.utc).isoformat(),
+                "start_utc": str(int((event_time - 15*60*1000) // 1000)),
+                "end_utc": str(int((event_time + 15*60*1000) // 1000)),
             }
         }
     }
@@ -633,6 +634,60 @@ async def home():
         # Calendar next red using existing stub
         cal = await calendar_upcoming("USD", 72)
 
+        # Intraday high/low since local SAST midnight for range_to_atr20
+        try:
+            tz_sast = pytz.timezone("Africa/Johannesburg")
+            now_local = datetime.now(tz_sast)
+            midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            midnight_ms = int(midnight_local.astimezone(timezone.utc).timestamp() * 1000)
+            intraday = [c for c in candles if c["t"] >= midnight_ms]
+            intraday_hi = max((c["h"] for c in intraday), default=None)
+            intraday_lo = min((c["l"] for c in intraday), default=None)
+            intraday_range = (intraday_hi - intraday_lo) if (intraday_hi is not None and intraday_lo is not None) else None
+        except Exception:
+            intraday_range = None
+
+        # Range-to-ATR20 proxy: use 1% of last price as ATR20 approximation to keep values in a familiar range
+        range_to_atr20 = None
+        if intraday_range is not None and last_price:
+            atr20_proxy = max(1e-9, 0.01 * float(last_price))
+            range_to_atr20 = float(intraday_range) / atr20_proxy
+
+        # Activity index proxy: logistic on z-score of absolute minute returns (24h window)
+        try:
+            closes_win = cvals[i0:] if i0 < len(cvals) else []
+            rets = []
+            for i in range(1, len(closes_win)):
+                a = closes_win[i-1]
+                b = closes_win[i]
+                if a:
+                    rets.append(abs((b - a) / a))
+            raw_z = _z_from_tail(rets, lookback=240)
+            activity_index = 1.0 / (1.0 + math.exp(-2.0 * raw_z))
+        except Exception:
+            activity_index = None
+
+        # Session-aware PDH/PDL (previous session high/low using 17:00 ET anchor)
+        nyt = ny_now()
+        anchor = session_day_anchor(nyt)
+        prev_start = anchor - timedelta(days=1)
+        prev_end = anchor
+        prev_window = filter_candles(candles, to_utc_ms(prev_start), to_utc_ms(prev_end))
+        prev_levels = compute_levels_for_window(prev_window)
+
+        # Simple nowcast based on driver z-scores (logistic transform)
+        dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
+        real_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "realZ"), 0.0)
+        vix_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "vixZ"), 0.0)
+        # Mirror signs similar to client-side model
+        real_z_c = max(-1.5, min(1.5, -real_z))
+        dxy_z_c = -dxy_z
+        vix_z_c = vix_z
+        logit = 0.0 + 0.60 * dxy_z_c + 0.20 * real_z_c + 0.20 * vix_z_c
+        p_up = 1.0 / (1.0 + math.exp(-logit))
+        direction = "bull" if p_up >= 0.5 else "bear"
+        confidence = max(p_up, 1.0 - p_up)
+
         payload = {
             "price": {
                 "last": last_price,
@@ -644,21 +699,67 @@ async def home():
             },
             "levels": {
                 "do": {"price": do_price},
-                "pdh": {"price": max(h) if h else None},
-                "pdl": {"price": min(l) if l else None},
+                # Previous session high/low
+                "pdh": {"price": prev_levels["PDH"]},
+                "pdl": {"price": prev_levels["PDL"]},
             },
             "metrics": {
                 "gap_pct": ((last_price - do_price) / do_price * 100.0) if (do_price and do_price != 0) else None,
+                "range_to_atr20": range_to_atr20,
+                "activity_index": activity_index,
                 "nowcast": {
+                    "direction": direction,
+                    "confidence": confidence,
+                    "window_min": 60,
                     "drivers": drivers,
                     "model_id": "stub-000",
                     "updated_at": end_ms,
                 },
             },
             "calendar": {"next_red": cal.get("next_red")} if isinstance(cal, dict) else {},
+            "sessions": {"overlap_with_ny": (8 <= ny_now().hour < 12)},
             "quality": {"state": "OK"},
         }
         return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# ---------------- WebSocket for Ticks (best-effort) ----------------
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ticks")
+async def ws_ticks(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            ts_ms = now_utc_ms()
+            bid = None
+            ask = None
+            last = None
+            try:
+                q = await fetch_twelvedata_quote("XAUUSD")
+                bid = q.get("bid")
+                ask = q.get("ask")
+                last = q.get("last")
+            except Exception:
+                try:
+                    _candles, last_p = await get_candles("XAUUSD")
+                    last = last_p
+                except Exception:
+                    last = None
+            if last is not None and (bid is None or ask is None):
+                # synthesize a tiny spread if missing
+                spread = max(0.05, 0.0005 * float(last))
+                bid = float(last) - spread / 2.0
+                ask = float(last) + spread / 2.0
+            payload = {"ts": ts_ms}
+            if bid is not None:
+                payload["bid"] = float(bid)
+            if ask is not None:
+                payload["ask"] = float(ask)
+            await ws.send_json(payload)
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        return
 
