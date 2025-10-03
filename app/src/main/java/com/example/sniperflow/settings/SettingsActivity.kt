@@ -6,6 +6,11 @@ import com.example.sniperflow.R
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import android.widget.Button
+import com.example.sniperflow.BuildConfig
+import com.example.sniperflow.network.RetrofitModule
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var repository: SettingsRepository
@@ -21,6 +26,9 @@ class SettingsActivity : AppCompatActivity() {
         val epsilonInput = findViewById<TextInputEditText>(R.id.epsilonInput)
         val cooldownInput = findViewById<TextInputEditText>(R.id.cooldownInput)
         val saveBtn = findViewById<android.view.View>(R.id.saveBtn)
+
+        // Optional: quick Test connection button if present
+        val testBtn = try { findViewById<Button>(R.id.btnTest) } catch (t: Throwable) { null }
 
         val (savedEpsilon, savedCooldown) = repository.load()
         epsilonInput.setText(savedEpsilon.toString())
@@ -48,6 +56,16 @@ class SettingsActivity : AppCompatActivity() {
             if (valid) {
                 repository.save(epsilon!!, cooldown!!)
                 Snackbar.make(view, "Saved", Snackbar.LENGTH_SHORT).show()
+            }
+        }
+
+        testBtn?.setOnClickListener { v ->
+            // Ping /health to verify current BASE_URL is reachable
+            val api = RetrofitModule.api(BuildConfig.BASE_URL)
+            lifecycleScope.launch {
+                runCatching { api.health() }
+                    .onSuccess { Snackbar.make(v, "API OK", Snackbar.LENGTH_SHORT).show() }
+                    .onFailure { Snackbar.make(v, "API unreachable", Snackbar.LENGTH_SHORT).show() }
             }
         }
     }
