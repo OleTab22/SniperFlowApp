@@ -85,12 +85,14 @@ data class AlertItem(
     val title: String?,
     @Json(name = "age_sec") val ageSec: Int? = null,
     val conf: Double? = null,
-    @Json(name = "ev_r") val evR: Double? = null
+    @Json(name = "ev_r") val evR: Double? = null,
+    val severity: String? = null
 )
 
 data class GatesSection(
     @Json(name = "plan_lock") val planLock: Boolean? = null,
-    val reason: String? = null
+    val reason: String? = null,
+    @Json(name = "news_lock") val newsLock: Boolean? = null
 )
 
 

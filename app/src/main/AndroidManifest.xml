@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"
@@ -18,7 +19,6 @@
         <activity
             android:name=".auth.LoginActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.SniperFlow">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -28,28 +28,23 @@
         <activity
             android:name=".auth.RegisterActivity"
             android:exported="false"
-            android:label="@string/app_name"
             android:theme="@style/Theme.SniperFlow" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.SniperFlow">
         </activity>
         <activity
             android:name="com.example.sniperflow.notifications.NotificationsActivity"
             android:exported="false"
-            android:label="@string/app_name"
             android:theme="@style/Theme.SniperFlow" />
         <activity
             android:name=".levels.LevelsActivity"
             android:exported="false"
-            android:label="@string/app_name"
             android:theme="@style/Theme.SniperFlow" />
         <activity
             android:name=".settings.SettingsActivity"
             android:exported="false"
-            android:label="@string/app_name"
             android:theme="@style/Theme.SniperFlow" />
     </application>
 

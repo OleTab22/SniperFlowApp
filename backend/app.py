@@ -20,6 +20,8 @@ ALPHA_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
 TWELVE_BASE = "https://api.twelvedata.com/time_series"
 TWELVE_KEY = os.getenv("TWELVEDATA_API_KEY")
 PRICE_SOURCE = os.getenv("PRICE_SOURCE", "auto").lower()  # auto|yahoo|twelvedata|dukascopy|stooq|alpha
+FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
+FRED_KEY = os.getenv("FRED_API_KEY")
 
 app = FastAPI()
 # Allow mobile clients to call the API (adjust origins if you want to restrict)
@@ -589,6 +591,187 @@ async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def _fetch_intraday_yf_series_multi(symbols):
+    """Try a list of Yahoo symbols in order; return first successful series."""
+    for sym in symbols:
+        try:
+            data = await _fetch_intraday_yf_series(sym)
+            if data and data.get("candles"):
+                return {"symbol": sym, **data}
+        except Exception:
+            pass
+    return None
+
+
+def _resample_candles(candles, tf: str):
+    """Aggregate 1m-like candles to 5m or 1h. Returns list of {t,o,h,l,c}."""
+    tf_l = (tf or "").lower()
+    if tf_l in ("1m", "1min", "1"):
+        return candles
+    if tf_l in ("5m", "5min", "5"):
+        bucket_ms = 5 * 60 * 1000
+    elif tf_l in ("1h", "60m", "60"):
+        bucket_ms = 60 * 60 * 1000
+    else:
+        return candles
+    buckets: Dict[int, Dict[str, float]] = {}
+    for c in candles:
+        t = c.get("t")
+        if t is None:
+            continue
+        b = (int(t) // bucket_ms) * bucket_ms
+        bkt = buckets.get(b)
+        o = float(c.get("o")) if c.get("o") is not None else None
+        h = float(c.get("h")) if c.get("h") is not None else None
+        l = float(c.get("l")) if c.get("l") is not None else None
+        v = float(c.get("c")) if c.get("c") is not None else None
+        if o is None or h is None or l is None or v is None:
+            continue
+        if not bkt:
+            buckets[b] = {"o": o, "h": h, "l": l, "c": v}
+        else:
+            bkt["h"] = max(bkt["h"], h)
+            bkt["l"] = min(bkt["l"], l)
+            bkt["c"] = v
+    out = [{"t": k, **v} for k, v in buckets.items()]
+    out.sort(key=lambda x: x["t"])
+    return out
+
+
+def _parse_fred_date_to_ms(date_str: str) -> int:
+    naive = datetime.strptime(date_str, "%Y-%m-%d")
+    aware = naive.replace(tzinfo=timezone.utc)
+    return to_utc_ms(aware)
+
+
+async def fetch_fred_series(series_id: str, max_points: int = 365) -> Optional[Dict[str, Any]]:
+    """Fetch daily FRED series observations with simple caching; returns dict with 'ts' and 'values'."""
+    key = ("fred", series_id)
+    ts_payload = _cache.get(key)
+    if ts_payload and (now_utc_ms() - ts_payload[0] < 12 * 60 * 60 * 1000):  # 12h cache
+        return ts_payload[1]
+    if not FRED_KEY:
+        return None
+    params = {
+        "series_id": series_id,
+        "api_key": FRED_KEY,
+        "file_type": "json",
+        "observation_start": (datetime.now(timezone.utc) - timedelta(days=max(370, max_points + 10))).strftime("%Y-%m-%d"),
+    }
+    r = await _client.get(FRED_BASE, params=params, timeout=15)
+    r.raise_for_status()
+    j = r.json()
+    obs = j.get("observations", [])
+    values = []
+    tss = []
+    for o in obs:
+        v = o.get("value")
+        d = o.get("date")
+        try:
+            fv = float(v)
+        except Exception:
+            continue
+        ts = _parse_fred_date_to_ms(d)
+        values.append(fv)
+        tss.append(ts)
+    if not values:
+        return None
+    values = values[-max_points:]
+    tss = tss[-max_points:]
+    payload = {"values": values, "ts": tss[-1]}
+    _cache[key] = (now_utc_ms(), payload)
+    return payload
+
+
+async def _yf_chart_with_volume(symbol: str, interval: str, range_: str) -> Optional[Dict[str, Any]]:
+    """Fetch Yahoo chart with volume when available; returns dict with 'candles'."""
+    try:
+        url = f"{YF_BASE}{symbol}"
+        params = {"interval": interval, "range": range_}
+        r = await _client.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        result = j.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        res = result[0]
+        ts = res.get("timestamp", [])
+        quote = res.get("indicators", {}).get("quote", [{}])[0]
+        opens = quote.get("open", [])
+        highs = quote.get("high", [])
+        lows = quote.get("low", [])
+        closes = quote.get("close", [])
+        vols = quote.get("volume", []) or []
+        n = min(len(ts), len(opens), len(highs), len(lows), len(closes))
+        candles = []
+        for i in range(n):
+            if opens[i] is None or highs[i] is None or lows[i] is None or closes[i] is None:
+                continue
+            c = {
+                "t": int(ts[i]) * 1000,
+                "o": float(opens[i]),
+                "h": float(highs[i]),
+                "l": float(lows[i]),
+                "c": float(closes[i]),
+            }
+            if i < len(vols) and vols[i] is not None:
+                try:
+                    c["v"] = float(vols[i])
+                except Exception:
+                    pass
+            candles.append(c)
+        if not candles:
+            return None
+        return {"candles": candles}
+    except Exception:
+        return None
+
+
+async def _volume_percentile_gcf() -> Optional[int]:
+    """Compute intraday cumulative volume percentile for GC=F vs last ~20 days at same 5m index."""
+    # Fetch 1 month of 5m bars with volume
+    data = await _yf_chart_with_volume("GC=F", interval="5m", range_="1mo")
+    if not data or not data.get("candles"):
+        return None
+    candles = data["candles"]
+    # Group by UTC day
+    days: Dict[str, list] = {}
+    for c in candles:
+        dt = datetime.fromtimestamp(c["t"]/1000, tz=timezone.utc)
+        key = dt.strftime("%Y-%m-%d")
+        days.setdefault(key, []).append(c)
+    # Ensure order per day
+    for k in list(days.keys()):
+        days[k].sort(key=lambda x: x["t"])
+    if not days:
+        return None
+    today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if today_key not in days:
+        # Use the most recent day as "today"
+        today_key = sorted(days.keys())[-1]
+    today = [c for c in days[today_key] if c.get("v") is not None]
+    if not today:
+        return None
+    # Index by number of bars since midnight (5m cadence)
+    N = len(today)
+    today_cum = 0.0
+    for c in today:
+        today_cum += float(c.get("v", 0.0))
+    # Build historical samples at same index N
+    samples = []
+    for k, seq in days.items():
+        if k == today_key:
+            continue
+        seq_v = [c for c in seq if c.get("v") is not None]
+        if len(seq_v) >= N:
+            s = sum(float(x.get("v", 0.0)) for x in seq_v[:N])
+            samples.append(s)
+    if not samples:
+        return None
+    below_eq = len([x for x in samples if x <= today_cum])
+    pct = int((below_eq / len(samples)) * 100.0)
+    return max(0, min(100, pct))
+
 @app.get("/home")
 async def home():
     try:
@@ -838,13 +1021,407 @@ async def home():
             "sessions": {"overlap_with_ny": (8 <= ny_now().hour < 12), "current": current_session},
             "quality": {"state": q_state, "spread_pts": spread_pts, "latency_ms": latency_ms},
             "gates": {"plan_lock": False, "reason": None, "news_lock": news_lock},
+            # Best-effort recent alerts preview (stub). Replace with your real alerting pipeline.
+            "alerts": [
+                {
+                    "id": f"a-{int(end_ms/1000)-600}",
+                    "title": "PDH sweep + MSS",
+                    "age_sec": 600,
+                    "conf": 0.72,
+                    "ev_r": 1.35,
+                    "severity": "actionable",
+                },
+                {
+                    "id": f"a-{int(end_ms/1000)-1800}",
+                    "title": "Asia range expansion",
+                    "age_sec": 1800,
+                    "conf": 0.58,
+                    "ev_r": 0.90,
+                    "severity": "setup",
+                },
+                {
+                    "id": f"a-{int(end_ms/1000)-2400}",
+                    "title": "Liquidity pocket tagged",
+                    "age_sec": 2400,
+                    "conf": 0.41,
+                    "ev_r": 0.65,
+                    "severity": "info",
+                },
+            ],
         }
         return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
 
-# ---------------- WebSocket for Ticks (best-effort) ----------------
+# ---------------- v1 DRIVERS / NOWCAST / FEATURES ----------------
+
+def _staleness(last_ts_ms: int, now_ms: int, fresh_threshold_min: int = 10) -> tuple[bool, int]:
+    """Return (fresh, staleSec) given last data timestamp and 'now'."""
+    if not last_ts_ms:
+        return (False, 0)
+    delta_s = max(0, (now_ms - last_ts_ms) // 1000)
+    return (delta_s <= fresh_threshold_min * 60, delta_s)
+
+
+async def _compute_drivers_payload() -> Dict[str, Any]:
+    """
+    Internal helper that pulls intraday ^DXY, ^VIX, ^TNX from Yahoo,
+    computes z-scores, freshness, and returns the drivers dict.
+    Signs: for gold, negative DXY and negative real yields are supportive.
+    """
+    end_ms = now_utc_ms()
+    out = {}
+
+    # DXY fallback chain: DX-Y.NYB -> DX=F -> UUP -> ^DXY
+    dxy = await _fetch_intraday_yf_series_multi(["DX-Y.NYB", "DX=F", "UUP", "^DXY"])
+    vix = await _fetch_intraday_yf_series("^VIX")
+    tnx = await _fetch_intraday_yf_series("^TNX")  # 10y nominal yield *10
+    es = await _fetch_intraday_yf_series("ES=F")   # S&P futures for risk-on
+
+    if dxy and dxy.get("candles"):
+        last_ts = dxy["candles"][-1]["t"]
+        fresh, stale = _staleness(last_ts, end_ms)
+        z = _z_from_tail([c["c"] for c in dxy["candles"]])
+        # invert sign for gold tilt
+        out["dxy"] = {"z": float(-z), "w": 0.35, "fresh": fresh, "staleSec": stale, "sym": dxy.get("symbol")}
+    else:
+        out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+
+    if vix and vix["candles"]:
+        last_ts = vix["candles"][-1]["t"]
+        fresh, stale = _staleness(last_ts, end_ms)
+        z = _z_from_tail([c["c"] for c in vix["candles"]])
+        out["vix"] = {"z": float(z), "w": 0.20, "fresh": fresh, "staleSec": stale}
+    else:
+        out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+
+    if tnx and tnx.get("candles"):
+        last_ts = tnx["candles"][-1]["t"]
+        fresh, stale = _staleness(last_ts, end_ms)
+        # TNX is ~10x yield in %, divide by 10; invert sign for gold
+        z = _z_from_tail([c["c"]/10.0 for c in tnx["candles"]])
+        out["nominal10y"] = {"z": float(-z), "w": 0.20, "fresh": fresh, "staleSec": stale}
+    else:
+        out["nominal10y"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+
+    # Real 10y from FRED DFII10 (daily)
+    try:
+        fred = await fetch_fred_series("DFII10", max_points=365)
+        if fred and fred.get("values"):
+            z = _z_from_tail(fred["values"], lookback=252)
+            # invert sign for gold (higher real yield -> negative)
+            out["real10y"] = {"z": float(-z), "w": 0.35, "fresh": True, "staleSec": None}
+        elif "real10y" not in out:
+            out["real10y"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+    except Exception:
+        if "real10y" not in out:
+            out["real10y"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+
+    # Risk-on proxy: +ES=F and -VIX
+    if es and es.get("candles") and vix and vix.get("candles"):
+        last_ts = min(es["candles"][-1]["t"], vix["candles"][-1]["t"])
+        fresh, stale = _staleness(last_ts, end_ms)
+        z_es = _z_from_tail([c["c"] for c in es["candles"]])
+        z_vix = _z_from_tail([c["c"] for c in vix["candles"]])
+        z_risk = 0.60 * z_es - 0.40 * z_vix
+        out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": fresh, "staleSec": stale}
+    else:
+        out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
+
+    return out
+
+
+@app.get("/v1/drivers")
+async def v1_drivers():
+    """
+    Macro drivers used by the client: DXY (−), real10y (−), VIX (+).
+    Returns z-scores, weights, freshness flags, and staleness seconds.
+    """
+    try:
+        return await _compute_drivers_payload()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"drivers: {e}")
+
+
+@app.get("/v1/nowcast")
+async def v1_nowcast():
+    """
+    Simple nowcast score in [-100, 100], based on drivers with signs:
+      logit = 0.60 * dxy.z  +  0.20 * real10y.z  +  0.20 * vix.z
+      score = clip(logit, -1..1) * 100
+    (dxy.z and real10y.z are already sign-adjusted inside _compute_drivers_payload)
+    """
+    try:
+        drv = await _compute_drivers_payload()
+        # Apply staleness decay: w' = w * exp(-staleSec / tau)
+        import math as _m
+        tau = 45 * 60  # 45 minutes
+        def decay(d):
+            w = float(d.get("w", 0.0))
+            s = d.get("staleSec")
+            if s is None:
+                return w
+            try:
+                return w * _m.exp(-(float(s) / float(tau)))
+            except Exception:
+                return w
+        # Compose drivers used by model
+        parts = []
+        for k in ("dxy", "real10y", "vix", "risk_on"):
+            if k in drv:
+                d = drv[k]
+                parts.append((float(d.get("z", 0.0)), decay(d)))
+        logit = sum(z * w for (z, w) in parts)
+        score = int(round(max(-1.0, min(1.0, logit)) * 100.0))
+        # Flatten drivers to list and include staleSec
+        flat = []
+        for k, d in drv.items():
+            flat.append({"id": k, "z": d.get("z", 0.0), "w": d.get("w", 0.0), "fresh": d.get("fresh", False), "staleSec": d.get("staleSec")})
+        return {"score": score, "drivers": flat, "ts": now_utc_ms()}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"nowcast: {e}")
+
+
+@app.get("/v1/features")
+async def v1_features(symbol: str = "XAUUSD"):
+    """
+    Feature panel for the app: gap %, ATR20x proxy, activity, volume percentile,
+    24h high/low, and quality from bid/ask spread when available.
+    """
+    try:
+        candles, last_price = await get_candles(symbol)
+
+        end_ms = now_utc_ms()
+        # 24h window
+        start_ms = end_ms - 24 * 60 * 60 * 1000
+        w = [c for c in candles if c["t"] >= start_ms]
+        h24 = max((c["h"] for c in w), default=None)
+        l24 = min((c["l"] for c in w), default=None)
+
+        # Gap% per spec: (today_open - prev_close)/prev_close*100 using UTC day
+        now_utc = datetime.now(timezone.utc)
+        today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        prev_midnight = today_midnight - timedelta(days=1)
+        today_w = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(today_midnight + timedelta(days=1)))
+        prev_w = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
+        today_open = today_w[0]["o"] if today_w else None
+        prev_close = prev_w[-1]["c"] if prev_w else None
+        gap_pct = None
+        if prev_close and prev_close != 0 and today_open:
+            gap_pct = (today_open - prev_close) / prev_close * 100.0
+
+        # Intraday range & ATR20 proxy
+        tz_sast = pytz.timezone("Africa/Johannesburg")
+        midnight_local = datetime.now(tz_sast).replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight_ms = int(midnight_local.astimezone(timezone.utc).timestamp() * 1000)
+        intraday = [c for c in candles if c["t"] >= midnight_ms]
+        intraday_hi = max((c["h"] for c in intraday), default=None)
+        intraday_lo = min((c["l"] for c in intraday), default=None)
+        intraday_range = (intraday_hi - intraday_lo) if (intraday_hi is not None and intraday_lo is not None) else None
+
+        atr20x = None
+        if intraday_range is not None and last_price:
+            atr20_proxy = max(1e-9, 0.01 * float(last_price))
+            atr20x = float(intraday_range) / atr20_proxy
+
+        # Activity index (logistic of z on absolute 1m returns in SAST day)
+        activity = None
+        try:
+            closes_day = [c["c"] for c in intraday]
+            rets = []
+            for i in range(1, len(closes_day)):
+                a, b = closes_day[i-1], closes_day[i]
+                if a:
+                    rets.append(abs((b - a) / a))
+            raw_z = _z_from_tail(rets, lookback=240)
+            activity = 1.0 / (1.0 + math.exp(-2.0 * raw_z))
+        except Exception:
+            activity = None
+
+        # Volume percentile via GC=F (futures) vs 20-day median-by-minute (5m cadence)
+        volPct = None
+        try:
+            volPct = await _volume_percentile_gcf()
+        except Exception:
+            volPct = None
+
+        # Quality from bid/ask spread if available
+        quality = "OK"
+        try:
+            q = await fetch_twelvedata_quote(symbol)
+            bid, ask = q.get("bid"), q.get("ask")
+            if bid and ask:
+                spread_pts = int(round(max(0.0, float(ask) - float(bid)) * 100))
+                if spread_pts <= 20:
+                    quality = "OK"
+                elif spread_pts <= 30:
+                    quality = "DEGRADED"
+                else:
+                    quality = "POOR"
+        except Exception:
+            pass
+
+        # Freshness: last bar within 5 minutes
+        fresh, stale_sec = _staleness(candles[-1]["t"] if candles else 0, end_ms, fresh_threshold_min=5)
+
+        return {
+            "gapPct": gap_pct,
+            "atr20x": atr20x,
+            "volPct": volPct,
+            "activity": activity,
+            "h24": h24,
+            "l24": l24,
+            "quality": quality,
+            "fresh": fresh,
+            "staleSec": stale_sec,
+            "ts": end_ms,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"features: {e}")
+
+
+@app.get("/v1/price/tick")
+async def v1_price_tick(symbol: str = "XAUUSD"):
+    """
+    Lightweight tick endpoint: returns bid/ask if available (TwelveData quote),
+    otherwise synthesizes bid/ask around last. Includes freshness flag.
+    """
+    try:
+        end_ms = now_utc_ms()
+        bid = None
+        ask = None
+        last = None
+        try:
+            q = await fetch_twelvedata_quote(symbol)
+            bid = q.get("bid")
+            ask = q.get("ask")
+            last = q.get("last")
+        except Exception:
+            pass
+        if last is None and (bid is None or ask is None):
+            try:
+                _candles, last_p = await get_candles(symbol)
+                last = last_p
+            except Exception:
+                last = None
+        if last is not None and (bid is None or ask is None):
+            # synthesize minimal spread
+            spread = max(0.05, 0.0005 * float(last))
+            bid = float(last) - spread / 2.0
+            ask = float(last) + spread / 2.0
+        fresh = True
+        try:
+            candles, _lp = await get_candles(symbol)
+            last_ts = candles[-1]["t"] if candles else 0
+            fresh, _stale = _staleness(last_ts, end_ms, fresh_threshold_min=2)
+        except Exception:
+            pass
+        # Quality and staleness
+        quality = "stale" if not fresh else "OK"
+        stale_sec = None
+        try:
+            candles, _lp = await get_candles(symbol)
+            last_ts = candles[-1]["t"] if candles else 0
+            _fresh2, stale = _staleness(last_ts, end_ms, fresh_threshold_min=2)
+            stale_sec = stale
+            if _fresh2 and quality == "OK" and bid is not None and ask is not None:
+                spread_pts = int(round(max(0.0, float(ask) - float(bid)) * 100))
+                if spread_pts <= 20:
+                    quality = "ok"
+                elif spread_pts <= 30:
+                    quality = "degraded"
+                else:
+                    quality = "stale"
+        except Exception:
+            pass
+        out = {"ts": end_ms, "fresh": fresh, "staleSec": stale_sec, "quality": quality}
+        if bid is not None:
+            out["bid"] = float(bid)
+        if ask is not None:
+            out["ask"] = float(ask)
+        return out
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"price/tick: {e}")
+
+
+@app.get("/v1/ohlc")
+async def v1_ohlc(symbol: str = "XAUUSD", tf: str = "1m", limit: int = 1000):
+    """
+    Normalized OHLC fetcher. For now, uses get_candles() and slices the tail.
+    tf is accepted for compatibility (1m/5m/1h), but current implementation
+    returns the native interval of the provider path.
+    """
+    try:
+        end_ms = now_utc_ms()
+        candles, _last = await get_candles(symbol)
+        # Resample if requested (server-side) to 5m or 1h
+        bars = _resample_candles(candles, tf)
+        if limit and limit > 0:
+            bars = bars[-limit:]
+        fresh, _stale = _staleness(bars[-1]["t"] if bars else 0, end_ms, fresh_threshold_min=5)
+        return {
+            "symbol": symbol,
+            "tf": tf,
+            "bars": bars,
+            "fresh": fresh,
+            "staleSec": _stale if bars else None,
+            "ts": end_ms,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ohlc: {e}")
+
+
+@app.get("/v1/levels/today")
+async def v1_levels_today(symbol: str = "XAUUSD"):
+    """
+    UTC-based levels for today: DO (open at 00:00 UTC), and PDH/PDL from
+    the previous UTC day. Computed from the current candles feed.
+    """
+    try:
+        candles, _last = await get_candles(symbol)
+        now_utc = datetime.now(timezone.utc)
+        today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        prev_midnight = today_midnight - timedelta(days=1)
+        next_midnight = today_midnight + timedelta(days=1)
+
+        today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
+        prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
+
+        do_price = compute_levels_for_window(today_window)["DO"]
+        prev_levels = compute_levels_for_window(prev_window)
+        return {
+            "DO": do_price,
+            "PDH": prev_levels["PDH"],
+            "PDL": prev_levels["PDL"],
+            "ts": now_utc_ms(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"levels/today: {e}")
+
+
+@app.get("/v1/calendar/upcoming")
+async def v1_calendar_upcoming(window: str = "8h", ccy: str = "USD"):
+    """
+    Windowed upcoming calendar wrapper. Accepts window like "8h" or "24h",
+    delegates to the existing calendar stub using hours.
+    """
+    try:
+        hours = 8
+        try:
+            s = window.strip().lower()
+            if s.endswith("h"):
+                hours = int(s[:-1])
+            else:
+                hours = int(s)
+        except Exception:
+            hours = 8
+        return await calendar_upcoming(ccy=ccy, hours=hours)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"calendar/upcoming: {e}")
+
+
+ # ---------------- WebSocket for Ticks (best-effort) ----------------
 from fastapi import WebSocket, WebSocketDisconnect
 
 @app.websocket("/ticks")
