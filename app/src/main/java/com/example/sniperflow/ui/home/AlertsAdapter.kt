@@ -25,10 +25,22 @@ class AlertsAdapter(
         private val tvMeta = root.findViewById<TextView>(R.id.tvAlertMeta)
         fun bind(a: AlertItem) {
             tvTitle.text = a.title ?: "Alert"
-            val conf = a.conf?.let { String.format("%.0f", it * 100) } ?: "-"
-            val ev = a.evR?.let { String.format("%.2f", it) } ?: "-"
+            val conf = a.conf?.let { String.format(java.util.Locale.getDefault(), "%.0f", it * 100) } ?: "-"
+            val ev = a.evR?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "-"
             val age = a.ageSec ?: 0
-            tvMeta.text = "EV ${ev}R • Conf ${conf}% • ${age}s ago"
+            val sev = (a.severity ?: "").lowercase()
+            val sevLabel = when (sev) {
+                "actionable" -> "Actionable"
+                "setup" -> "Setup"
+                "info" -> "Info"
+                else -> ""
+            }
+            tvMeta.text = listOfNotNull(
+                if (sevLabel.isNotEmpty()) sevLabel else null,
+                "EV ${ev}R",
+                "Conf ${conf}%",
+                "${age}s ago"
+            ).joinToString(" • ")
             root.setOnClickListener { onClick(a) }
         }
     }

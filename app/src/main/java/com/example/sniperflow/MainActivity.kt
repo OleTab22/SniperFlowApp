@@ -21,7 +21,9 @@ import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.TimeZone
 import com.example.sniperflow.ui.SparklineView
-import java.time.Instant
+import java.util.Locale
+import androidx.core.content.edit
+import androidx.core.content.res.ResourcesCompat
 import android.content.SharedPreferences
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -32,6 +34,7 @@ import android.graphics.drawable.GradientDrawable
 import android.widget.Toast
 import okhttp3.OkHttpClient
 import com.example.sniperflow.network.PriceWsClient
+import com.example.sniperflow.R
 
 class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
@@ -55,7 +58,7 @@ class MainActivity : AppCompatActivity() {
     private val cacheAdapter by lazy { moshi.adapter(HomeCache::class.java) }
     private fun homePrefs(): SharedPreferences = getSharedPreferences("sniperflow_home", MODE_PRIVATE)
     private fun saveHomeCache(cache: HomeCache) {
-        runCatching { homePrefs().edit().putString("home", cacheAdapter.toJson(cache)).apply() }
+        runCatching { homePrefs().edit { putString("home", cacheAdapter.toJson(cache)) } }
     }
     private fun loadHomeCache(): HomeCache? = runCatching {
         val s = homePrefs().getString("home", null) ?: return null
@@ -74,7 +77,21 @@ class MainActivity : AppCompatActivity() {
             Snackbar.make(v, "Alerts coming soon", Snackbar.LENGTH_SHORT).show()
         }
         findViewById<View>(R.id.fabAdd)?.setOnClickListener { v ->
-            Snackbar.make(v, "Add: journal or alert", Snackbar.LENGTH_SHORT).show()
+            // Quick Journal dialog
+            val input = android.widget.EditText(this)
+            input.hint = "Journal: what happened?"
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Quick Journal")
+                .setView(input)
+                .setPositiveButton("Save") { d, _ ->
+                    val text = input.text?.toString()?.trim()
+                    if (!text.isNullOrEmpty()) {
+                        Snackbar.make(v, "Saved to journal", Snackbar.LENGTH_SHORT).show()
+                    }
+                    d.dismiss()
+                }
+                .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
+                .show()
         }
 
         // Top bar actions
@@ -156,7 +173,6 @@ class MainActivity : AppCompatActivity() {
     private fun fetchAndRender() {
         val baseUrl = BuildConfig.BASE_URL
         val api = RetrofitModule.api(baseUrl)
-        val settings = SettingsRepository(this)
         lastRefreshAt = System.currentTimeMillis()
 
         val priceText = findViewById<TextView>(R.id.priceText)
@@ -168,7 +184,7 @@ class MainActivity : AppCompatActivity() {
         val pdhVal = findViewById<TextView>(R.id.pdhVal)
         val pdlVal = findViewById<TextView>(R.id.pdlVal)
 
-        val dailyText = findViewById<TextView>(R.id.eventText) // reused for small notices
+        // val dailyText = findViewById<TextView>(R.id.eventText) // deprecated usage; using specific 'pill' later
         val gapText = findViewById<TextView>(R.id.gapText)
 
         val biasRing = findViewById<BiasRingView>(R.id.biasRing)
@@ -255,19 +271,19 @@ class MainActivity : AppCompatActivity() {
 
                 // Price panel
                 home.price?.let { p ->
-                    p.last?.let { priceText.text = String.format("%.2f", it) }
+                    p.last?.let { priceText.text = String.format(Locale.getDefault(), "%.2f", it) }
                     val pct = p.pct24h
-                    changeText.text = pct?.let { String.format("%+.2f%%", it) } ?: "—"
+                    changeText.text = pct?.let { String.format(Locale.getDefault(), "%+.2f%%", it) } ?: "—"
                     pct?.let {
                         val color = if (it >= 0) ContextCompat.getColor(this@MainActivity, R.color.colorPositive)
                         else ContextCompat.getColor(this@MainActivity, R.color.colorNegative)
                         changeText.setTextColor(color)
                     }
-                    findViewById<TextView>(R.id.high24Text)?.text = p.high24h?.let { "H24 ${String.format("%.2f", it)}" } ?: "H24 —"
-                    findViewById<TextView>(R.id.low24Text)?.text = p.low24h?.let { "L24 ${String.format("%.2f", it)}" } ?: "L24 —"
+                    findViewById<TextView>(R.id.high24Text)?.text = p.high24h?.let { getString(R.string.h24_fmt, it) } ?: "H24 —"
+                    findViewById<TextView>(R.id.low24Text)?.text = p.low24h?.let { getString(R.string.l24_fmt, it) } ?: "L24 —"
                     p.updatedAt?.let {
-                        val sdf = SimpleDateFormat("HH:mm:ss"); sdf.timeZone = TimeZone.getDefault()
-                        updatedText.text = "Updated ${sdf.format(java.util.Date(it))}"
+                        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault()); sdf.timeZone = TimeZone.getDefault()
+                        updatedText.text = getString(R.string.updated_fmt, sdf.format(java.util.Date(it)))
                     }
                     p.closes?.let { miniChart.setSeries(it) }
                 }
@@ -277,13 +293,13 @@ class MainActivity : AppCompatActivity() {
                 // Metrics chips
                 home.metrics?.let { m ->
                     val gap = m.gapPct
-                    gapText?.text = gap?.let { "Gap ${String.format("%+.2f%%", it)}" } ?: "Gap —"
-                    findViewById<TextView>(R.id.rangeText)?.text = m.rangeToAtr20?.let { "Range ${String.format("%.2f", it)}×ATR20" } ?: "Range —"
-                    findViewById<TextView>(R.id.volumeText)?.text = m.volumePercentile?.let { "Volume ${it}p" } ?: "Volume —"
-                    findViewById<TextView>(R.id.activityText)?.text = m.activityIndex?.let { "Activity ${String.format("%.2f", it)}" } ?: "Activity —"
+                    gapText?.text = gap?.let { getString(R.string.gap_fmt, it) } ?: "Gap —"
+                    findViewById<TextView>(R.id.rangeText)?.text = m.rangeToAtr20?.let { getString(R.string.range_fmt, it) } ?: "Range —"
+                    findViewById<TextView>(R.id.volumeText)?.text = m.volumePercentile?.let { getString(R.string.volume_fmt, it) } ?: "Volume —"
+                    findViewById<TextView>(R.id.activityText)?.text = m.activityIndex?.let { getString(R.string.activity_fmt, it) } ?: "Activity —"
                     findViewById<TextView>(R.id.nowcastText)?.text = m.nowcast?.let { nc ->
-                        val conf = nc.confidence?.let { String.format("%.0f", it * 100) } ?: "-"
-                        "Nowcast ${conf}% (★) · ${nc.windowMin ?: 60}m"
+                        val confStr = nc.confidence?.let { String.format(Locale.getDefault(), "%.0f", it * 100) } ?: "-"
+                        getString(R.string.nowcast_fmt, confStr, nc.windowMin ?: 60)
                     } ?: "Nowcast —"
                 }
 
@@ -295,13 +311,20 @@ class MainActivity : AppCompatActivity() {
                         "DEGRADED" -> "Quality Degraded"
                         else -> "Quality Poor"
                     }
+                    val state = (q.state ?: "OK").uppercase()
+                    val color = when (state) {
+                        "OK" -> R.color.colorPositive
+                        "DEGRADED" -> R.color.colorWarning
+                        else -> R.color.colorNegative
+                    }
+                    view?.setTextColor(ContextCompat.getColor(this@MainActivity, color))
                 }
 
                 // Levels row
                 home.levels?.let { lv ->
-                    doVal.text = "DO ${lv.doLevel?.price?.let { String.format("%.2f", it) } ?: "-"}"
-                    pdhVal.text = "PDH ${lv.pdh?.price?.let { String.format("%.2f", it) } ?: "-"}"
-                    pdlVal.text = "PDL ${lv.pdl?.price?.let { String.format("%.2f", it) } ?: "-"}"
+                    doVal.text = lv.doLevel?.price?.let { getString(R.string.do_fmt, it) } ?: "DO —"
+                    pdhVal.text = lv.pdh?.price?.let { getString(R.string.pdh_fmt, it) } ?: "PDH —"
+                    pdlVal.text = lv.pdl?.price?.let { getString(R.string.pdl_fmt, it) } ?: "PDL —"
                 }
 
                 // Bias from nowcast
@@ -309,31 +332,53 @@ class MainActivity : AppCompatActivity() {
                     val conf = (nc.confidence ?: 0.0).coerceIn(0.0, 1.0)
                     val dir = if ((nc.direction ?: "").lowercase() == "bull") BiasRingView.Direction.BULL else BiasRingView.Direction.BEAR
                     biasRing.setData(conf.toFloat(), dir)
-                    biasTitle.text = "Bias: ${if (dir == BiasRingView.Direction.BULL) "Bull" else "Bear"}"
-                    biasConfidence.text = "Conf. ${String.format("%.0f", conf * 100)}%"
+                    biasTitle.text = getString(R.string.bias_title_fmt, if (dir == BiasRingView.Direction.BULL) "Bull" else "Bear")
+                    biasConfidence.text = getString(R.string.bias_conf_fmt, String.format(Locale.getDefault(), "%.0f", conf * 100))
                     driversFlex.removeAllViews()
                     nc.drivers?.take(4)?.forEach { d ->
                         val tv = TextView(this@MainActivity)
                         val v = d.value ?: 0.0
-                        tv.text = "${d.key ?: ""} ${if (v >= 0) "+" else ""}${String.format("%.1f", v)}"
+                        val contrib = d.contribution?.let { String.format(Locale.getDefault(), " (%.0f%%)", kotlin.math.abs(it * 100)) } ?: ""
+                        val sign = if (v >= 0) "+" else ""
+                        val valStr = String.format(Locale.getDefault(), "%.1f", v)
+                        tv.text = getString(R.string.driver_chip_text_fmt, d.key ?: "", "$sign$valStr", contrib)
                         val color = if (v >= 0) R.color.colorPositive else R.color.colorNegative
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, color))
                         tv.setPadding(16, 10, 16, 10)
-                        tv.background = resources.getDrawable(R.drawable.bg_chip, theme)
+                        tv.background = ResourcesCompat.getDrawable(resources, R.drawable.bg_chip, theme)
                         val lp = com.google.android.flexbox.FlexboxLayout.LayoutParams(
                             com.google.android.flexbox.FlexboxLayout.LayoutParams.WRAP_CONTENT,
                             com.google.android.flexbox.FlexboxLayout.LayoutParams.WRAP_CONTENT
                         )
                         lp.setMargins(0, 0, 12, 12)
                         tv.layoutParams = lp
+                        if (d.stale == true) tv.alpha = 0.6f else tv.alpha = 1.0f
+                        tv.setOnClickListener {
+                            val dialog = android.app.AlertDialog.Builder(this@MainActivity)
+                                .setView(layoutInflater.inflate(R.layout.dialog_driver_detail, driversFlex, false))
+                                .create()
+                            dialog.show()
+                            val title = dialog.findViewById<TextView>(R.id.tvTitle)
+                            val body = dialog.findViewById<TextView>(R.id.tvBody)
+                            title?.text = getString(R.string.driver_detail_title_fmt, d.key ?: "")
+                            val staleText = if (d.stale == true) getString(R.string.stale_label) else ""
+                            body?.text = getString(R.string.driver_detail_body_fmt, v, contrib, staleText)
+                        }
                         driversFlex.addView(tv)
                     }
                 }
 
-                // Sessions overlap badge
+                // Sessions overlap badge & haptics for news lock transitions
                 home.sessions?.let { s ->
                     val badge = findViewById<TextView>(R.id.badgeOverlap)
                     badge?.visibility = if (s.overlapWithNy == true) View.VISIBLE else View.GONE
+                }
+
+                // Haptics: bias flip and news lock
+                runCatching {
+                    if (home.gates?.newsLock == true) {
+                        vibrateOnce(30, 60)
+                    }
                 }
 
                 // News/countdown
@@ -344,12 +389,12 @@ class MainActivity : AppCompatActivity() {
                     countdownJob = lifecycleScope.launch {
                         while (isActive) {
                             runCatching {
-                                val targetMs = Instant.ofEpochSecond((event.time_utc?.toLong() ?: 0L)).toEpochMilli()
+                                val targetMs = (event.time_utc?.toLongOrNull() ?: 0L) * 1000L
                                 val mins = ((targetMs - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
-                                pill.text = "${event.title} in ${mins}m (${event.impact.replaceFirstChar { it.uppercase() }})"
+                                pill.text = getString(R.string.event_countdown_fmt, event.title, mins, event.impact.replaceFirstChar { it.uppercase() })
                                 event.lock_window?.let { lw ->
-                                    val start = Instant.ofEpochSecond((lw.start_utc?.toLong() ?: 0L)).toEpochMilli()
-                                    val end = Instant.ofEpochSecond((lw.end_utc?.toLong() ?: 0L)).toEpochMilli()
+                                    val start = (lw.start_utc.toLongOrNull() ?: 0L) * 1000L
+                                    val end = (lw.end_utc.toLongOrNull() ?: 0L) * 1000L
                                     val now = System.currentTimeMillis()
                                     val inLock = now in start..end
                                     pill.background = ContextCompat.getDrawable(this@MainActivity,
@@ -441,4 +486,16 @@ class MainActivity : AppCompatActivity() {
     private fun setConnStatusGreen() = setConnStatus("#16A34A")
     private fun setConnStatusAmber() = setConnStatus("#F59E0B")
     private fun setConnStatusRed() = setConnStatus("#DC2626")
+
+    private fun vibrateOnce(durationMs: Long, amplitude: Int) {
+        try {
+            val vibrator = getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, amplitude))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(durationMs)
+            }
+        } catch (_: Throwable) { }
+    }
 }
