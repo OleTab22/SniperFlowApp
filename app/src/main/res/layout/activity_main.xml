@@ -302,9 +302,102 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
-                    <TextView android:id="@+id/doVal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="DO —" />
-                    <TextView android:id="@+id/pdhVal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="PDH —" />
-                    <TextView android:id="@+id/pdlVal" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="PDL —" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:gravity="center_vertical"
+                        android:paddingLeft="12dp"
+                        android:paddingRight="12dp"
+                        android:background="@drawable/bg_level_chip_do">
+                        <TextView
+                            android:id="@+id/labelDo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:text="DO"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:background="@drawable/bg_level_tag_do" />
+                        <TextView
+                            android:id="@+id/doVal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="10dp"
+                            android:text="—"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <Space
+                        android:layout_width="8dp"
+                        android:layout_height="1dp" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:gravity="center_vertical"
+                        android:paddingLeft="12dp"
+                        android:paddingRight="12dp"
+                        android:background="@drawable/bg_level_chip_pdh">
+                        <TextView
+                            android:id="@+id/labelPdh"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:text="PDH"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:background="@drawable/bg_level_tag_pdh" />
+                        <TextView
+                            android:id="@+id/pdhVal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="10dp"
+                            android:text="—"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <Space
+                        android:layout_width="8dp"
+                        android:layout_height="1dp" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:gravity="center_vertical"
+                        android:paddingLeft="12dp"
+                        android:paddingRight="12dp"
+                        android:background="@drawable/bg_level_chip_pdl">
+                        <TextView
+                            android:id="@+id/labelPdl"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:text="PDL"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:background="@drawable/bg_level_tag_pdl" />
+                        <TextView
+                            android:id="@+id/pdlVal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="10dp"
+                            android:text="—"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
