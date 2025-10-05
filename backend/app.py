@@ -772,6 +772,84 @@ async def _volume_percentile_gcf() -> Optional[int]:
     pct = int((below_eq / len(samples)) * 100.0)
     return max(0, min(100, pct))
 
+
+def _wilder_atr20_from_ohlc1m(candles) -> Optional[float]:
+    # Build daily bars from 1m candles for approx ATR20
+    if not candles:
+        return None
+    # group by UTC date
+    days: Dict[str, Dict[str, float]] = {}
+    last_close = None
+    for c in candles:
+        if any(c.get(k) is None for k in ("o", "h", "l", "c", "t")):
+            continue
+        dt = datetime.fromtimestamp(c["t"]/1000, tz=timezone.utc)
+        key = dt.strftime("%Y-%m-%d")
+        d = days.get(key)
+        o = float(c["o"]); h = float(c["h"]); l = float(c["l"]); cl = float(c["c"])
+        if not d:
+            days[key] = {"o": o, "h": h, "l": l, "c": cl}
+        else:
+            d["h"] = max(d["h"], h)
+            d["l"] = min(d["l"], l)
+            d["c"] = cl
+    daily = []
+    for k in sorted(days.keys()):
+        d = days[k]
+        daily.append({"o": d["o"], "h": d["h"], "l": d["l"], "c": d["c"]})
+    if len(daily) < 21:
+        return None
+    # true range and Wilder ATR
+    def tr(prev, cur):
+        return max(cur["h"] - cur["l"], max(abs(cur["h"] - prev["c"]), abs(cur["l"] - prev["c"])))
+    atr = sum(tr(daily[i-1], daily[i]) for i in range(1, 21)) / 20.0
+    for i in range(21, len(daily)):
+        atr = (atr * 19.0 + tr(daily[i-1], daily[i])) / 20.0
+    return atr
+
+
+def _stub_alerts(now_ms: int):
+    return [
+        {
+            "id": f"a-{int(now_ms/1000)-600}",
+            "title": "PDH sweep + MSS",
+            "age_sec": 600,
+            "conf": 0.72,
+            "ev_r": 1.35,
+            "severity": "actionable",
+        },
+        {
+            "id": f"a-{int(now_ms/1000)-1800}",
+            "title": "Asia range expansion",
+            "age_sec": 1800,
+            "conf": 0.58,
+            "ev_r": 0.90,
+            "severity": "setup",
+        },
+        {
+            "id": f"a-{int(now_ms/1000)-2400}",
+            "title": "Liquidity pocket tagged",
+            "age_sec": 2400,
+            "conf": 0.41,
+            "ev_r": 0.65,
+            "severity": "info",
+        },
+    ]
+
+
+@app.get("/v1/alerts")
+async def v1_alerts(since: Optional[int] = None):
+    """Return recent alerts (stub). since is epoch seconds; filters by age."""
+    try:
+        now_ms = now_utc_ms()
+        alerts = _stub_alerts(now_ms)
+        if since is not None:
+            cutoff = since
+            alerts = [a for a in alerts if int(a.get("id", "a-0").split("-")[-1]) >= cutoff]
+        return alerts
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"alerts: {e}")
+
 @app.get("/home")
 async def home():
     try:
@@ -809,6 +887,7 @@ async def home():
         dxy = await _fetch_intraday_yf_series("^DXY")
         vix = await _fetch_intraday_yf_series("^VIX")
         tnx = await _fetch_intraday_yf_series("^TNX")
+        es = await _fetch_intraday_yf_series("ES=F")
         drivers = []
         if dxy:
             last_ts = dxy["candles"][-1]["t"] if dxy["candles"] else 0
@@ -822,6 +901,14 @@ async def home():
             last_ts = vix["candles"][-1]["t"] if vix["candles"] else 0
             stale = (end_ms - last_ts) > (10 * 60 * 1000)
             drivers.append({"key": "vixZ", "value": _z_from_tail([c["c"] for c in vix["candles"]]), "stale": stale})
+        # Risk-on driver from ES=F and VIX
+        if es and vix and es.get("candles") and vix.get("candles"):
+            last_ts = min(es["candles"][-1]["t"], vix["candles"][-1]["t"]) if es["candles"] and vix["candles"] else 0
+            stale = (end_ms - last_ts) > (10 * 60 * 1000)
+            z_es = _z_from_tail([c["c"] for c in es["candles"]])
+            z_vix = _z_from_tail([c["c"] for c in vix["candles"]])
+            z_risk = 0.60 * z_es - 0.40 * z_vix
+            drivers.append({"key": "risk_on", "value": z_risk, "stale": stale})
 
         # Calendar next red using existing stub
         cal = await calendar_upcoming("USD", 72)
@@ -911,13 +998,24 @@ async def home():
         term_real = 0.20 * real_z_c
         term_vix = 0.20 * vix_z_c
         term_mom = 0.30 * mom
+        # risk_on contribution (not part of logit currently)
+        term_risk = 0.10 * (next((d.get("value", 0.0) for d in drivers if d.get("key") == "risk_on"), 0.0))
+        # DO context contribution (signed distance normalized by prev range)
+        do_contrib_val = 0.0
+        try:
+            prev_rng = (prev_levels["PDH"] - prev_levels["PDL"]) if (prev_levels.get("PDH") and prev_levels.get("PDL")) else None
+            if prev_rng and prev_rng != 0 and do_price is not None and last_price is not None:
+                do_contrib_val = ((float(last_price) - float(do_price)) / float(prev_rng))
+        except Exception:
+            do_contrib_val = 0.0
+        term_do = 0.10 * do_contrib_val
         logit = 0.0 + term_dxy + term_real + term_vix + term_mom
         p_up = 1.0 / (1.0 + math.exp(-logit))
         direction = "bull" if p_up >= 0.5 else "bear"
         confidence = max(p_up, 1.0 - p_up)
 
         # Add contribution fractions for driver chips
-        sum_abs = sum(abs(x) for x in (term_dxy, term_real, term_vix, term_mom)) or 1.0
+        sum_abs = sum(abs(x) for x in (term_dxy, term_real, term_vix, term_mom, term_risk, term_do)) or 1.0
         for d in drivers:
             if d["key"] == "dxyZ":
                 d["contribution"] = term_dxy / sum_abs
@@ -925,7 +1023,10 @@ async def home():
                 d["contribution"] = term_real / sum_abs
             elif d["key"] == "vixZ":
                 d["contribution"] = term_vix / sum_abs
-        drivers.append({"key": "mom", "value": mom, "stale": False, "contribution": term_mom / sum_abs})
+            elif d["key"] == "risk_on":
+                d["contribution"] = term_risk / sum_abs
+        # Add DO context as a chip
+        drivers.append({"key": "do_ctx", "value": do_contrib_val, "stale": False, "contribution": term_do / sum_abs})
 
         # Quote for bid/ask and spread/quality
         bid = None
@@ -1129,6 +1230,25 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
     else:
         out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
 
+    # DO context driver (distance to DO/PDH/PDL, signed by current price vs DO)
+    try:
+        candles, last_price = await get_candles("XAUUSD")
+        nyt = ny_now()
+        anchor = session_day_anchor(nyt)
+        today = filter_candles(candles, to_utc_ms(anchor), to_utc_ms(anchor + timedelta(days=1)))
+        prev = filter_candles(candles, to_utc_ms(anchor - timedelta(days=1)), to_utc_ms(anchor))
+        do_price = compute_levels_for_window(today)["DO"]
+        prev_levels = compute_levels_for_window(prev)
+        pdh = prev_levels.get("PDH")
+        pdl = prev_levels.get("PDL")
+        z = 0.0
+        if do_price and pdh and pdl and (pdh - pdl) != 0:
+            # signed distance normalized by previous range
+            z = ((float(last_price) - float(do_price)) / (float(pdh) - float(pdl))) * 2.0  # scale into ~[-2,2]
+        out["do_ctx"] = {"z": float(max(-3.0, min(3.0, z))), "w": 0.10, "fresh": True, "staleSec": 0}
+    except Exception:
+        out.setdefault("do_ctx", {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None})
+
     return out
 
 
@@ -1139,7 +1259,13 @@ async def v1_drivers():
     Returns z-scores, weights, freshness flags, and staleness seconds.
     """
     try:
-        return await _compute_drivers_payload()
+        key = ("drivers", "XAUUSD")
+        ts_payload = _cache.get(key)
+        if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
+            return ts_payload[1]
+        payload = await _compute_drivers_payload()
+        _cache[key] = (now_utc_ms(), payload)
+        return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"drivers: {e}")
 
@@ -1153,7 +1279,14 @@ async def v1_nowcast():
     (dxy.z and real10y.z are already sign-adjusted inside _compute_drivers_payload)
     """
     try:
-        drv = await _compute_drivers_payload()
+        # reuse cached drivers to reduce hits
+        key = ("drivers", "XAUUSD")
+        ts_payload = _cache.get(key)
+        if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
+            drv = ts_payload[1]
+        else:
+            drv = await _compute_drivers_payload()
+            _cache[key] = (now_utc_ms(), drv)
         # Apply staleness decay: w' = w * exp(-staleSec / tau)
         import math as _m
         tau = 45 * 60  # 45 minutes
@@ -1220,10 +1353,11 @@ async def v1_features(symbol: str = "XAUUSD"):
         intraday_lo = min((c["l"] for c in intraday), default=None)
         intraday_range = (intraday_hi - intraday_lo) if (intraday_hi is not None and intraday_lo is not None) else None
 
+        # Wilder ATR20 from daily, using our 1m candles aggregation
+        atr20 = _wilder_atr20_from_ohlc1m(candles)
         atr20x = None
-        if intraday_range is not None and last_price:
-            atr20_proxy = max(1e-9, 0.01 * float(last_price))
-            atr20x = float(intraday_range) / atr20_proxy
+        if intraday_range is not None and atr20 is not None and atr20 > 0:
+            atr20x = float(intraday_range) / float(atr20)
 
         # Activity index (logistic of z on absolute 1m returns in SAST day)
         activity = None

@@ -318,6 +318,21 @@ class MainActivity : AppCompatActivity() {
                         else -> R.color.colorNegative
                     }
                     view?.setTextColor(ContextCompat.getColor(this@MainActivity, color))
+
+                    // Feed banner: show degraded or offline states
+                    val banner = findViewById<View>(R.id.bannerFeed)
+                    val bannerText = findViewById<TextView>(R.id.tvBannerFeedText)
+                    when (state) {
+                        "DEGRADED" -> {
+                            banner?.visibility = View.VISIBLE
+                            bannerText?.text = "Degraded feed — using cached/low quality quotes."
+                        }
+                        "POOR" -> {
+                            banner?.visibility = View.VISIBLE
+                            bannerText?.text = "Stale feed — data may be delayed."
+                        }
+                        else -> banner?.visibility = View.GONE
+                    }
                 }
 
                 // Levels row
@@ -335,13 +350,30 @@ class MainActivity : AppCompatActivity() {
                     biasTitle.text = getString(R.string.bias_title_fmt, if (dir == BiasRingView.Direction.BULL) "Bull" else "Bear")
                     biasConfidence.text = getString(R.string.bias_conf_fmt, String.format(Locale.getDefault(), "%.0f", conf * 100))
                     driversFlex.removeAllViews()
-                    nc.drivers?.take(4)?.forEach { d ->
+                    // Driver label mapping (handles both /home keys and /v1 keys)
+                    val DRIVER_LABEL = mapOf(
+                        "dxyZ" to "DXY",
+                        "dxy" to "DXY",
+                        "realZ" to "Real Yields",
+                        "real10y" to "Real Yields",
+                        "vixZ" to "VIX",
+                        "risk_on" to "Risk-on",
+                        "do_ctx" to "DO context",
+                        "mom" to "Momentum"
+                    )
+                    val chips = (nc.drivers ?: emptyList())
+                        .distinctBy { it.key ?: "" }
+                        .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
+                        .take(4)
+                    chips.forEach { d ->
                         val tv = TextView(this@MainActivity)
                         val v = d.value ?: 0.0
-                        val contrib = d.contribution?.let { String.format(Locale.getDefault(), " (%.0f%%)", kotlin.math.abs(it * 100)) } ?: ""
+                        val contribVal = d.contribution ?: 0.0
+                        val contrib = String.format(Locale.getDefault(), " (%.0f%%)", kotlin.math.abs(contribVal * 100))
                         val sign = if (v >= 0) "+" else ""
                         val valStr = String.format(Locale.getDefault(), "%.1f", v)
-                        tv.text = getString(R.string.driver_chip_text_fmt, d.key ?: "", "$sign$valStr", contrib)
+                        val label = DRIVER_LABEL[d.key] ?: (d.key ?: "")
+                        tv.text = getString(R.string.driver_chip_text_fmt, label, "$sign$valStr", contrib)
                         val color = if (v >= 0) R.color.colorPositive else R.color.colorNegative
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, color))
                         tv.setPadding(16, 10, 16, 10)
@@ -360,7 +392,7 @@ class MainActivity : AppCompatActivity() {
                             dialog.show()
                             val title = dialog.findViewById<TextView>(R.id.tvTitle)
                             val body = dialog.findViewById<TextView>(R.id.tvBody)
-                            title?.text = getString(R.string.driver_detail_title_fmt, d.key ?: "")
+                            title?.text = getString(R.string.driver_detail_title_fmt, label)
                             val staleText = if (d.stale == true) getString(R.string.stale_label) else ""
                             body?.text = getString(R.string.driver_detail_body_fmt, v, contrib, staleText)
                         }
@@ -432,9 +464,10 @@ class MainActivity : AppCompatActivity() {
             } catch (t: Throwable) {
                 Timber.e(t, "Home fetch failed")
                 setConnStatusRed()
-                findViewById<View>(R.id.livePriceCard)?.let {
-                    Snackbar.make(it, t.message ?: "Failed to load", Snackbar.LENGTH_LONG).show()
-                }
+                // Offline banner: show cached
+                findViewById<View>(R.id.bannerFeed)?.visibility = View.VISIBLE
+                findViewById<TextView>(R.id.tvBannerFeedText)?.text = "Offline — showing cached"
+                findViewById<View>(R.id.livePriceCard)?.let { Snackbar.make(it, t.message ?: "Failed to load", Snackbar.LENGTH_LONG).show() }
             }
             finally {
                 swipe?.isRefreshing = false
