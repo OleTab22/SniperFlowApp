@@ -1,28 +1,34 @@
 package com.example.sniperflow.domain.metrics
 
 import com.example.sniperflow.domain.model.Ohlc
-import java.time.Instant
-import java.time.ZoneId
+import java.util.Calendar
+import java.util.TimeZone
 
 object TimeUtil {
-    val TZ_SAST: ZoneId = ZoneId.of("Africa/Johannesburg")
+    private const val TZ_SAST_ID: String = "Africa/Johannesburg"
 
-    fun midnightSastInstant(nowUtc: Instant = Instant.now()): Instant {
-        val zdt = nowUtc.atZone(TZ_SAST)
-        return zdt.toLocalDate().atStartOfDay(TZ_SAST).toInstant()
+    private fun midnightSastEpochSec(nowUtcMs: Long = System.currentTimeMillis()): Long {
+        val tz = TimeZone.getTimeZone(TZ_SAST_ID)
+        val calNow = Calendar.getInstance(tz)
+        calNow.timeInMillis = nowUtcMs
+        calNow.set(Calendar.HOUR_OF_DAY, 0)
+        calNow.set(Calendar.MINUTE, 0)
+        calNow.set(Calendar.SECOND, 0)
+        calNow.set(Calendar.MILLISECOND, 0)
+        return (calNow.timeInMillis / 1000L)
     }
 
     fun indexFromMidnightSAST(bars: List<Ohlc>): Int {
         if (bars.isEmpty()) return 0
-        val midnightEpoch = midnightSastInstant().epochSecond
+        val midnightEpoch = midnightSastEpochSec()
         val idx = bars.indexOfFirst { it.tsSecUtc >= midnightEpoch }
         return if (idx == -1) 0 else idx
     }
 
-    fun minutesSinceMidnightSAST(nowUtc: Instant = Instant.now()): Int {
-        val m = midnightSastInstant(nowUtc).epochSecond
-        val n = nowUtc.epochSecond
-        return ((n - m) / 60).toInt().coerceIn(0, 1439)
+    fun minutesSinceMidnightSAST(nowUtcMs: Long = System.currentTimeMillis()): Int {
+        val mSec = midnightSastEpochSec(nowUtcMs) * 1000L
+        val diff = nowUtcMs - mSec
+        return ((diff / 60000L).toInt()).coerceIn(0, 1439)
     }
 }
 
