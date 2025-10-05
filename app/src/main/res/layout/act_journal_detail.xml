@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout android:orientation="vertical" android:padding="16dp"
+        android:layout_width="match_parent" android:layout_height="wrap_content">
+
+        <TextView android:id="@+id/title" android:textStyle="bold" android:textSize="20sp" android:text="Journal"/>
+
+        <TextView android:id="@+id/txtRRPlanned" android:layout_marginTop="8dp"/>
+        <TextView android:id="@+id/txtRRReal"/>
+
+        <TextView android:id="@+id/txtContext" android:layout_marginTop="8dp"/>
+
+        <TextView android:text="Setup" android:textStyle="bold" android:layout_marginTop="12dp"/>
+        <TextView android:id="@+id/txtSetup"/>
+
+        <TextView android:text="Notes" android:textStyle="bold" android:layout_marginTop="12dp"/>
+        <TextView android:id="@+id/txtNotes"/>
+
+        <TextView android:text="Screenshots" android:textStyle="bold" android:layout_marginTop="12dp"/>
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvShotsDetail" android:layout_width="match_parent"
+            android:layout_height="120dp"/>
+    </LinearLayout>
+</ScrollView>
+
+

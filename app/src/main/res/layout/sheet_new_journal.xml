@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="16dp"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+
+    <LinearLayout android:orientation="horizontal">
+        <ToggleButton android:id="@+id/chipBull" android:textOn="Bull" android:textOff="Bull"/>
+        <ToggleButton android:id="@+id/chipBear" android:textOn="Bear" android:textOff="Bear"
+            android:layout_marginStart="8dp"/>
+        <ToggleButton android:id="@+id/chipLondon" android:textOn="London" android:textOff="London"
+            android:layout_marginStart="12dp"/>
+        <ToggleButton android:id="@+id/chipNY" android:textOn="New York" android:textOff="New York"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+    <LinearLayout android:orientation="horizontal" android:layout_marginTop="12dp"
+        android:layout_width="match_parent" android:layout_height="wrap_content">
+        <EditText android:id="@+id/ctxDo"  android:hint="DO"  android:inputType="numberDecimal"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"/>
+        <EditText android:id="@+id/ctxPdh" android:hint="PDH" android:inputType="numberDecimal"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"/>
+        <EditText android:id="@+id/ctxPdl" android:hint="PDL" android:inputType="numberDecimal"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+    <EditText android:id="@+id/inEntry" android:hint="Entry" android:inputType="numberDecimal"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"/>
+    <EditText android:id="@+id/inSl" android:hint="Stop Loss" android:inputType="numberDecimal"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"/>
+    <EditText android:id="@+id/inTp" android:hint="Take Profit" android:inputType="numberDecimal"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"/>
+
+    <LinearLayout android:id="@+id/tagsRow" android:orientation="horizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp">
+        <CheckBox android:id="@+id/tagMss" android:text="mss"/>
+        <CheckBox android:id="@+id/tagFvg" android:text="fvg"/>
+        <CheckBox android:id="@+id/tagNews" android:text="news"/>
+        <CheckBox android:id="@+id/tagOverride" android:text="override"/>
+        <CheckBox android:id="@+id/tagTp" android:text="TP"/>
+    </LinearLayout>
+
+    <TextView android:text="Screenshots" android:layout_marginTop="10dp"/>
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvShots" android:layout_width="match_parent"
+        android:layout_height="84dp" android:clipToPadding="false"/>
+    <Button android:id="@+id/btnAddShots" android:text="Add screenshots"
+        android:layout_marginTop="6dp"/>
+
+    <EditText android:id="@+id/inNotes" android:hint="Notes" android:minLines="3"
+        android:gravity="top" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"/>
+
+    <Button android:id="@+id/btnSave" android:text="Save" android:layout_marginTop="14dp"/>
+</LinearLayout>
+
+

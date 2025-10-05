@@ -2,6 +2,8 @@ package com.example.sniperflow.network
 
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Body
+import retrofit2.http.POST
 
 data class IntradayLevels(
     val asOf: Long,
@@ -29,6 +31,28 @@ interface BrokerApi {
 
     @GET("health")
     suspend fun health(): Map<String, String>
+
+    // --- Journal ---
+    @POST("v1/journal")
+    suspend fun postJournal(@Body body: JournalReq): Map<String, Any>
 }
+
+data class JournalReq(
+    val user_id: String,
+    val alert_id: String,
+    val notes: String,
+    val direction: String? = null,
+    val timeframe: String? = null,
+    val entry: Double? = null,
+    val sl: Double? = null,
+    val tp: Double? = null,
+    val planned_rr: Double? = null,
+    val tags: List<String>? = null,
+    val session: String? = null,
+    val bias: String? = null,
+    val doLvl: Double? = null,
+    val pdh: Double? = null,
+    val pdl: Double? = null,
+)
 
 

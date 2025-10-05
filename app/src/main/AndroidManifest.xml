@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
+        android:name=".App"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -46,6 +47,12 @@
             android:name=".settings.SettingsActivity"
             android:exported="false"
             android:theme="@style/Theme.SniperFlow" />
+
+        <!-- Journal UI -->
+        <activity
+            android:name=".ui.journal.JournalDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
     </application>
 
 </manifest>

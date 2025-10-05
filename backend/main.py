@@ -6,7 +6,14 @@ from datetime import datetime
 
 # ---------- ENV ----------
 DATABASE_URL = os.getenv("DATABASE_URL")  # set in Render
-def db(): return psycopg2.connect(DATABASE_URL, sslmode="require") if DATABASE_URL else psycopg2.connect(os.getenv("DATABASE_URL", ""))
+def db():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL not set")
+    try:
+        return psycopg2.connect(DATABASE_URL, sslmode="require")
+    except Exception:
+        # Some providers enforce SSL in the URL already; retry without explicit sslmode
+        return psycopg2.connect(DATABASE_URL)
 
 # ---------- APP ----------
 app = FastAPI(title="SniperFlow API", version="1.0")
@@ -124,5 +131,15 @@ def post_journal(entry: JournalIn):
         jid = cur.fetchone()[0]
         c.commit()
         return {"id": jid}
+
+# tiny debug helper (optional)
+@app.get("/v1/journal/latest")
+def latest_journal():
+    if not DATABASE_URL:
+        raise HTTPException(503, "DB not configured")
+    with db() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM journal ORDER BY timestamp DESC LIMIT 1")
+        row = cur.fetchone()
+        return dict(row) if row else {}
 
 

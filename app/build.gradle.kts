@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.kotlin.kapt")
     id("com.google.gms.google-services")
 }
 
@@ -79,6 +80,13 @@ dependencies {
     implementation(libs.moshi.kotlin)
     // Logging
     implementation(libs.timber)
+    // Room (offline journal)
+    implementation("androidx.room:room-ktx:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+    // WorkManager for background sync
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Images (Photo thumbnails)
+    implementation("io.coil-kt:coil:2.6.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
