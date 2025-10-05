@@ -1,5 +1,7 @@
 package com.example.sniperflow.network
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -8,6 +10,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 object RetrofitModule {
+    @RequiresApi(Build.VERSION_CODES.O)
     fun api(baseUrl: String): BrokerApi {
         val client = OkHttpClient.Builder()
             .callTimeout(Duration.ofSeconds(15))

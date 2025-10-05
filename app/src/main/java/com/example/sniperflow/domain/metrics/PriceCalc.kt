@@ -1,16 +1,16 @@
+@file:Suppress("unused")
 package com.example.sniperflow.domain.metrics
 
 import com.example.sniperflow.domain.model.Ohlc
 import com.example.sniperflow.domain.model.PricePanel
-import java.time.Instant
 
 object PriceCalc {
     fun lastPrice(lastTickMid: Double?, minuteBars: List<Ohlc>): Double =
         lastTickMid ?: minuteBars.lastOrNull()?.c ?: Double.NaN
 
-    fun delta24h(minuteBars: List<Ohlc>, last: Double, nowUtc: Instant = Instant.now()): Pair<Double, Double> {
+    fun delta24h(minuteBars: List<Ohlc>, last: Double, nowUtcMs: Long = System.currentTimeMillis()): Pair<Double, Double> {
         if (minuteBars.isEmpty()) return 0.0 to 0.0
-        val targetEpoch = nowUtc.epochSecond - 24L * 3600L
+        val targetEpoch = (nowUtcMs / 1000L) - 24L * 3600L
         val idx = minuteBars.indexOfLast { it.tsSecUtc <= targetEpoch }.let { if (it == -1) 0 else it }
         val ref = minuteBars[idx].c
         val delta = last - ref
