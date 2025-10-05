@@ -345,6 +345,22 @@
                 android:textSize="14sp" />
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Feed Status Banner (Degraded/Offline) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/bannerFeed"
+            android:visibility="gone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp">
+            <TextView
+                android:id="@+id/tvBannerFeedText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="12dp"
+                android:text="Degraded feed — using cached/low quality quotes."
+                android:textSize="14sp" />
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Alerts list (last 3) -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/listAlerts"
