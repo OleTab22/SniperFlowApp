@@ -1,0 +1,10 @@
+0000000000000000000000000000000000000000 f437b9883c893702d72c1bcafdd244a490e916e2 OleTab22 <oletab22@gmail.com> 1759483189 +0200	branch: Created from HEAD
+f437b9883c893702d72c1bcafdd244a490e916e2 dd299fdcdef0cc4608f401793873317551448f88 OleTab22 <oletab22@gmail.com> 1759483191 +0200	commit: chore: update project (backend /home + WS, app models/UI, sparkline)
+dd299fdcdef0cc4608f401793873317551448f88 e92990d24d28560e10ecc580566503c2c999e1c5 OleTab22 <oletab22@gmail.com> 1759483613 +0200	rebase (finish): refs/heads/update/all-2025-10-03 onto 93cd9b4a64f5f2a3839ae1d6deed45031f093744
+e92990d24d28560e10ecc580566503c2c999e1c5 35da847707105ceb4c00692c5f971029a9434875 OleTab22 <oletab22@gmail.com> 1759484142 +0200	merge origin/update/all-2025-10-03: Merge made by the 'ort' strategy.
+35da847707105ceb4c00692c5f971029a9434875 7e24659b8166745cb4bdb4584afad8396357dc94 OleTab22 <oletab22@gmail.com> 1759621494 +0200	commit: update
+7e24659b8166745cb4bdb4584afad8396357dc94 b6a6402ed3437541f5ee3e0bb3c05d0478b04e34 OleTab22 <oletab22@gmail.com> 1759621536 +0200	commit: update
+b6a6402ed3437541f5ee3e0bb3c05d0478b04e34 b24c3e816569f0f7b91e985a5b21b950a386dc68 OleTab22 <oletab22@gmail.com> 1759623206 +0200	commit: update
+b24c3e816569f0f7b91e985a5b21b950a386dc68 5151ea9ea4a36ac5759693c6ab05db8c6a6d7490 OleTab22 <oletab22@gmail.com> 1759663233 +0200	commit: Updated app: added new features and bug fixes
+5151ea9ea4a36ac5759693c6ab05db8c6a6d7490 b08bc5ce566f6990229b19217b3b3a17a18a6319 OleTab22 <oletab22@gmail.com> 1759663281 +0200	pull origin main --rebase (finish): refs/heads/update/all-2025-10-03 onto c6414faf720beaaa0bf66eb947583d707f9410cb
+b08bc5ce566f6990229b19217b3b3a17a18a6319 1cc385b62c01787049b02e2ed029dbb67bef7402 OleTab22 <oletab22@gmail.com> 1759664165 +0200	reset: moving to origin/main

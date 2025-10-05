@@ -1,4 +1,22 @@
 <resources>
     <string name="app_name">SniperFlow</string>
-    <string name="base_url">http://10.0.2.2:8787/</string>
+    <string name="base_url">https://sniperflow-api.onrender.com/</string>
+    <string name="updated_fmt">Updated %1$s</string>
+    <string name="h24_fmt">H24 %1$.2f</string>
+    <string name="l24_fmt">L24 %1$.2f</string>
+    <string name="gap_fmt">Gap %1$+.2f%%</string>
+    <string name="range_fmt">Range %1$.2f×ATR20</string>
+    <string name="volume_fmt">Volume %1$dp</string>
+    <string name="activity_fmt">Activity %1$.2f</string>
+    <string name="nowcast_fmt">Nowcast %1$s%% (★) · %2$dm</string>
+    <string name="do_fmt">DO %1$.2f</string>
+    <string name="pdh_fmt">PDH %1$.2f</string>
+    <string name="pdl_fmt">PDL %1$.2f</string>
+    <string name="bias_title_fmt">Bias: %1$s</string>
+    <string name="bias_conf_fmt">Conf. %1$s%%</string>
+    <string name="driver_chip_text_fmt">%1$s %2$s%3$s</string>
+    <string name="event_countdown_fmt">%1$s in %2$dm (%3$s)</string>
+    <string name="driver_detail_title_fmt">%1$s driver</string>
+    <string name="driver_detail_body_fmt">Value: %1$.2f%2$s\n%3$s</string>
+    <string name="stale_label">(stale)</string>
 </resources>
