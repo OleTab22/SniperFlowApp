@@ -6,6 +6,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.sniperflow.R
+import com.example.sniperflow.BuildConfig
 import com.example.sniperflow.network.RetrofitModule
 import com.example.sniperflow.settings.SettingsRepository
 import com.google.android.material.snackbar.Snackbar
@@ -20,8 +21,7 @@ class LevelsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_levels)
 
-        val baseUrl = getString(R.string.base_url)
-        val api = RetrofitModule.api(baseUrl)
+        val api = RetrofitModule.api(BuildConfig.BASE_URL)
         val settings = SettingsRepository(this)
 
         val fetchBtn = findViewById<MaterialButton>(R.id.fetchBtn)

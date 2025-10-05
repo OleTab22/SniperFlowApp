@@ -21,7 +21,7 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8787/\"")
+            buildConfigField("String", "BASE_URL", "\"https://sniperflow-api.onrender.com/\"")
         }
         release {
             isMinifyEnabled = false
@@ -42,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -91,4 +92,6 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     // NestedScrollView (already in core-ktx, ensure dependency present via libs)
     implementation(libs.androidx.core.ktx)
+    // RecyclerView for alerts list
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 }

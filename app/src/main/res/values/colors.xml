@@ -18,4 +18,5 @@
     <color name="colorPositive">@color/sf_green</color>
     <color name="colorNegative">@color/sf_red</color>
     <color name="colorMuted">@color/sf_gray</color>
+    <color name="colorWarning">#F59E0B</color>
 </resources>

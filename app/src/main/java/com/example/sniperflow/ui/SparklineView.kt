@@ -22,8 +22,18 @@ class SparklineView @JvmOverloads constructor(
     }
 
     private var points: FloatArray = floatArrayOf()
+    private var pendingValues: List<Double>? = null
 
     fun setSeries(values: List<Double>) {
+        pendingValues = values
+        if (width == 0 || height == 0) {
+            // wait until we have size; onSizeChanged will render
+            return
+        }
+        render(values)
+    }
+
+    private fun render(values: List<Double>) {
         if (values.isEmpty()) {
             points = floatArrayOf()
             invalidate()
@@ -46,6 +56,11 @@ class SparklineView @JvmOverloads constructor(
         }
         points = temp.toFloatArray()
         invalidate()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        pendingValues?.let { render(it) }
     }
 
     override fun onDraw(canvas: Canvas) {
