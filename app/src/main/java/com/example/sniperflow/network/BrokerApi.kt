@@ -29,7 +29,7 @@ interface BrokerApi {
     @GET("home")
     suspend fun home(): HomeResponse
 
-    @GET("health")
+    @GET("v1/health")
     suspend fun health(): Map<String, String>
 
     // --- Journal ---

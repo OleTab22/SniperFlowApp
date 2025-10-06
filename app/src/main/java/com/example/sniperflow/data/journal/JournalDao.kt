@@ -28,3 +28,11 @@ interface JournalDao {
 }
 
 
+
+
+
+
+
+
+
+

@@ -10,7 +10,7 @@ object PriceCalc {
 
     fun delta24h(minuteBars: List<Ohlc>, last: Double, nowUtcMs: Long = System.currentTimeMillis()): Pair<Double, Double> {
         if (minuteBars.isEmpty()) return 0.0 to 0.0
-        val targetEpoch = (nowUtcMs / 1000L) - 24L *  
+        val targetEpoch = (nowUtcMs / 1000L) - 24L * 60L * 60L
         val idx = minuteBars.indexOfLast { it.tsSecUtc <= targetEpoch }.let { if (it == -1) 0 else it }
         val ref = minuteBars[idx].c
         val delta = last - ref

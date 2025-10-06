@@ -66,7 +66,7 @@ private class ShotsGallery(private val onClick: (Uri)->Unit)
     fun submit(list: List<Uri>) { data.setAll(list); notifyDataSetChanged() }
     override fun getItemCount() = data.size
     override fun onCreateViewHolder(p: android.view.ViewGroup, t: Int) =
-        ShotsAdapter(null as (Int)?).VH(
+        ShotsAdapter(null as ((Int) -> Unit)?).VH(
             android.view.LayoutInflater.from(p.context).inflate(R.layout.item_shot_thumb, p, false)
         ).also { it.itemView.findViewById<android.widget.TextView>(R.id.btnRemove).visibility = android.view.View.GONE }
     override fun onBindViewHolder(h: ShotsAdapter.VH, i: Int) {
@@ -76,5 +76,13 @@ private class ShotsGallery(private val onClick: (Uri)->Unit)
     }
 }
 private fun <T> MutableList<T>.setAll(list: List<T>) { clear(); addAll(list) }
+
+
+
+
+
+
+
+
 
 

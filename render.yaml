@@ -5,17 +5,26 @@ services:
     region: oregon
     plan: free
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn main:app --app-dir backend --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: PRICE_SOURCE
         value: auto
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sniperflow-db
+          property: connectionString
       # Optional provider keys (set values in Render dashboard or here if okay to commit)
       - key: ALPHAVANTAGE_API_KEY
         generateValue: true
       - key: TWELVEDATA_API_KEY
         generateValue: true
-    healthCheckPath: /health
+    healthCheckPath: /v1/health
     autoDeploy: true
+
+databases:
+  - name: sniperflow-db
+    plan: free
+    region: oregon
 

@@ -19,6 +19,14 @@ def db():
 app = FastAPI(title="SniperFlow API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# Include non-DB endpoints from backend.app (market/levels/home etc.) so one server serves all
+try:
+    from .app import app as data_app
+    app.include_router(data_app.router)
+except Exception:
+    # If the import fails in certain environments, continue with DB-only API
+    pass
+
 # ---------- DDL + seed (runs once per deploy; safe to re-run) ----------
 DDL = """
 CREATE TABLE IF NOT EXISTS levels(

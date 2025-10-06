@@ -27,6 +27,8 @@ class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(dif
     inner class VH(v: View) : RecyclerView.ViewHolder(v) {
         private val title = v.findViewById<TextView>(R.id.tvTitle)
         private val rr = v.findViewById<TextView>(R.id.tvRr)
+        private val ivShots = v.findViewById<android.widget.ImageView>(R.id.ivShots)
+        private val ivStatus = v.findViewById<android.widget.ImageView>(R.id.ivStatus)
         private val bias = v.findViewById<TextView>(R.id.chipBias)
         private val session = v.findViewById<TextView>(R.id.chipSession)
         private val queued = v.findViewById<TextView>(R.id.chipQueued)
@@ -39,6 +41,17 @@ class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(dif
                 ?: e.plannedRR?.let { "R:R ${"%.2f".format(it)}" } ?: "R:R —"
             bias.text = e.bias; session.text = e.session
             queued.visibility = if (e.synced) View.GONE else View.VISIBLE
+            // Show camera icon when we have screenshots
+            ivShots.visibility = if (e.shotUrisCsv.split(",").any { it.isNotBlank() }) View.VISIBLE else View.GONE
+            // Status dot: green if realizedRR>0, red if realizedRR<0, gray otherwise
+            val rrVal = e.realizedRR
+            ivStatus.setImageResource(
+                when {
+                    rrVal != null && rrVal > 0 -> android.R.drawable.presence_online
+                    rrVal != null && rrVal < 0 -> android.R.drawable.presence_busy
+                    else -> android.R.drawable.presence_invisible
+                }
+            )
             subtitle.text = buildString {
                 append("${e.timeframe} ${e.direction}")
                 e.entry?.let { append(" @ ${"%.2f".format(it)}") }
@@ -58,5 +71,13 @@ class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(dif
         }
     }
 }
+
+
+
+
+
+
+
+
 
 

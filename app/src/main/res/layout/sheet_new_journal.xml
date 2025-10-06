@@ -1,17 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical" android:padding="16dp"
-    android:layout_width="match_parent" android:layout_height="wrap_content">
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:fillViewport="true"
+    android:scrollbars="vertical"
+    android:fadeScrollbars="false"
+    android:scrollbarStyle="outsideInset"
+    android:overScrollMode="always">
 
-    <LinearLayout android:orientation="horizontal">
-        <ToggleButton android:id="@+id/chipBull" android:textOn="Bull" android:textOff="Bull"/>
+    <LinearLayout
+        android:orientation="vertical" android:padding="16dp"
+        android:layout_width="match_parent" android:layout_height="wrap_content">
+
+    <TextView
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="New Journal" android:textSize="18sp" android:textStyle="bold"
+        android:layout_marginBottom="8dp"/>
+
+    <LinearLayout android:orientation="horizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content">
+        <ToggleButton android:id="@+id/chipBull" android:textOn="Bull" android:textOff="Bull"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         <ToggleButton android:id="@+id/chipBear" android:textOn="Bear" android:textOff="Bear"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginStart="8dp"/>
         <ToggleButton android:id="@+id/chipLondon" android:textOn="London" android:textOff="London"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginStart="12dp"/>
         <ToggleButton android:id="@+id/chipNY" android:textOn="New York" android:textOff="New York"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginStart="8dp"/>
     </LinearLayout>
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Prices" android:textStyle="bold" android:layout_marginTop="8dp"/>
 
     <LinearLayout android:orientation="horizontal" android:layout_marginTop="12dp"
         android:layout_width="match_parent" android:layout_height="wrap_content">
@@ -25,35 +46,172 @@
             android:layout_marginStart="8dp"/>
     </LinearLayout>
 
-    <EditText android:id="@+id/inEntry" android:hint="Entry" android:inputType="numberDecimal"
-        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp"/>
-    <EditText android:id="@+id/inSl" android:hint="Stop Loss" android:inputType="numberDecimal"
-        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"/>
-    <EditText android:id="@+id/inTp" android:hint="Take Profit" android:inputType="numberDecimal"
-        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"/>
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp" android:orientation="horizontal">
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/inEntry" android:hint="Entry" android:inputType="numberDecimal"
+                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        </com.google.android.material.textfield.TextInputLayout>
+        <LinearLayout android:orientation="horizontal"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnEntryMinus" android:text="-"
+                android:layout_width="40dp" android:layout_height="40dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnEntryPlus" android:text="+"
+                android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:orientation="horizontal">
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/inSl" android:hint="Stop Loss (SL)" android:inputType="numberDecimal"
+                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        </com.google.android.material.textfield.TextInputLayout>
+        <LinearLayout android:orientation="horizontal"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSlMinus" android:text="-"
+                android:layout_width="40dp" android:layout_height="40dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSlPlus" android:text="+"
+                android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:orientation="horizontal">
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/inTp" android:hint="Take Profit (TP)" android:inputType="numberDecimal"
+                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        </com.google.android.material.textfield.TextInputLayout>
+        <LinearLayout android:orientation="horizontal"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTpMinus" android:text="-"
+                android:layout_width="40dp" android:layout_height="40dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTpPlus" android:text="+"
+                android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout android:orientation="horizontal"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+        <TextView android:text="0.5R" android:padding="6dp"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:background="@drawable/bg_chip"/>
+        <TextView android:text="1R" android:padding="6dp"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:background="@drawable/bg_chip"/>
+        <TextView android:text="2R" android:padding="6dp"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:background="@drawable/bg_chip"/>
+    </LinearLayout>
+
+    <LinearLayout android:orientation="horizontal"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+        <TextView android:text="Risk (R) = |Entry − SL|" android:padding="8dp"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:background="@drawable/bg_chip"/>
+        <TextView android:text="TP-distance = |TP − Entry|" android:padding="8dp"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="8dp" android:background="@drawable/bg_chip"/>
+    </LinearLayout>
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Setup" android:textStyle="bold" android:layout_marginTop="12dp"/>
+
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/toggleDirection"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnLong" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="Long" android:checkable="true"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShort" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="Short" android:checkable="true"/>
+    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+        <AutoCompleteTextView
+            android:id="@+id/inTimeframe" android:hint="Timeframe"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:inputType="none" android:focusable="false"/>
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/inTime" android:hint="Time (tap to pick)"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:focusable="false" android:clickable="true"/>
+    </com.google.android.material.textfield.TextInputLayout>
 
     <LinearLayout android:id="@+id/tagsRow" android:orientation="horizontal"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="10dp">
-        <CheckBox android:id="@+id/tagMss" android:text="mss"/>
-        <CheckBox android:id="@+id/tagFvg" android:text="fvg"/>
-        <CheckBox android:id="@+id/tagNews" android:text="news"/>
-        <CheckBox android:id="@+id/tagOverride" android:text="override"/>
-        <CheckBox android:id="@+id/tagTp" android:text="TP"/>
+        <CheckBox android:id="@+id/tagMss" android:text="mss"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <CheckBox android:id="@+id/tagFvg" android:text="fvg"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <CheckBox android:id="@+id/tagNews" android:text="news"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <CheckBox android:id="@+id/tagOverride" android:text="override"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <CheckBox android:id="@+id/tagTp" android:text="TP"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
     </LinearLayout>
 
-    <TextView android:text="Screenshots" android:layout_marginTop="10dp"/>
+    <TextView android:text="Screenshots" android:layout_marginTop="10dp"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"/>
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvShots" android:layout_width="match_parent"
         android:layout_height="84dp" android:clipToPadding="false"/>
-    <Button android:id="@+id/btnAddShots" android:text="Add screenshots"
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnAddShots" android:text="Add screenshots"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="6dp"/>
 
-    <EditText android:id="@+id/inNotes" android:hint="Notes" android:minLines="3"
-        android:gravity="top" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"/>
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/inNotes" android:hint="Notes" android:minLines="3"
+            android:gravity="top" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    </com.google.android.material.textfield.TextInputLayout>
 
-    <Button android:id="@+id/btnSave" android:text="Save" android:layout_marginTop="14dp"/>
-</LinearLayout>
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnSave" android:text="Save"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="@color/colorPrimary"
+        android:textColor="@color/colorOnPrimary"/>
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>
+
+
+
+
+
+
+
+
 
 

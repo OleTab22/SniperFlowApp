@@ -53,6 +53,11 @@
             android:name=".ui.journal.JournalDetailActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".ui.journal.JournalActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SniperFlow"
+            android:parentActivityName=".MainActivity" />
     </application>
 
 </manifest>

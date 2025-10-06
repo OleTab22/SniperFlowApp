@@ -35,3 +35,11 @@ class JournalListFragment : Fragment() {
 }
 
 
+
+
+
+
+
+
+
+

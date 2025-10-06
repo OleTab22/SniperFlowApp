@@ -40,3 +40,11 @@ class ShotsAdapter(private val onRemove: ((Int) -> Unit)?)
 }
 
 
+
+
+
+
+
+
+
+

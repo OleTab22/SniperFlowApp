@@ -35,6 +35,7 @@ import android.widget.Toast
 import okhttp3.OkHttpClient
 import com.example.sniperflow.network.PriceWsClient
 import com.example.sniperflow.R
+import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
@@ -118,6 +119,33 @@ class MainActivity : AppCompatActivity() {
         // Show cached UI immediately, then refresh
         loadHomeCache()?.let { showFromCache(it) }
         fetchAndRender()
+        // Bottom navigation
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> {
+                    // already here
+                    true
+                }
+                R.id.nav_journal -> {
+                    startActivity(Intent(this, com.example.sniperflow.ui.journal.JournalActivity::class.java))
+                    true
+                }
+                R.id.nav_alerts -> {
+                    startActivity(Intent(this, com.example.sniperflow.notifications.NotificationsActivity::class.java))
+                    true
+                }
+                R.id.nav_chart -> {
+                    startActivity(Intent(this, com.example.sniperflow.levels.LevelsActivity::class.java))
+                    true
+                }
+                R.id.nav_settings -> {
+                    startActivity(Intent(this, com.example.sniperflow.settings.SettingsActivity::class.java))
+                    true
+                }
+                else -> false
+            }
+        }
+
 
         // Manual refresh with cooldown
         findViewById<MaterialButton>(R.id.refreshBtn)?.setOnClickListener { v ->
@@ -199,6 +227,7 @@ class MainActivity : AppCompatActivity() {
         val alertsList = findViewById<RecyclerView>(R.id.listAlerts)
         val alertsAdapter = AlertsAdapter { /* open alert detail */ }
         alertsList?.adapter = alertsAdapter
+        alertsList?.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
 
         fun highlightSessionsSAST() {
             // SAST windows: Asia 01:00–09:00, London 09:00–13:00, New York 14:30–18:00
@@ -335,11 +364,11 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Levels row
+                // Levels row (values only; labels are separate views)
                 home.levels?.let { lv ->
-                    doVal.text = lv.doLevel?.price?.let { getString(R.string.do_fmt, it) } ?: "DO —"
-                    pdhVal.text = lv.pdh?.price?.let { getString(R.string.pdh_fmt, it) } ?: "PDH —"
-                    pdlVal.text = lv.pdl?.price?.let { getString(R.string.pdl_fmt, it) } ?: "PDL —"
+                    doVal.text = lv.doLevel?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
+                    pdhVal.text = lv.pdh?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
+                    pdlVal.text = lv.pdl?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
                 }
 
                 // Bias from nowcast
