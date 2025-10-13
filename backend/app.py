@@ -57,6 +57,117 @@ def _block_td_until_reset():
         _cache[_td_block_key()] = (now_utc_ms() + 60 * 60 * 1000, True)
 
 
+# ----- Yahoo helpers (last-resort; strong caching/backoff) -----
+YF_BASE_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/"
+YF_BASE_QUOTE = "https://query1.finance.yahoo.com/v7/finance/quote"
+
+async def _with_backoff_http(fn, tries: int = 3, base: float = 0.6):
+    for i in range(tries):
+        try:
+            return await fn()
+        except Exception:
+            await asyncio.sleep(base * (2 ** i))
+    return await fn()
+
+def _cache_get(key: Tuple[str, str], ttl_ms: int):
+    hit = _cache.get(key)
+    if hit and (now_utc_ms() - hit[0]) < ttl_ms:
+        return hit[1]
+    return None
+
+def _cache_put(key: Tuple[str, str], val: Any):
+    _cache[key] = (now_utc_ms(), val)
+
+def _yf_symbol_xau() -> list[str]:
+    # Prefer spot XAUUSD=X, then GC=F (futures)
+    return ["XAUUSD=X", "GC=F"]
+
+async def yahoo_last(sym: str) -> Optional[float]:
+    key = ("yf_last", sym)
+    hit = _cache_get(key, ttl_ms=120_000)
+    if hit is not None:
+        return hit
+    async def fetch():
+        r = await _client.get(YF_BASE_QUOTE, params={"symbols": sym}, timeout=10)
+        r.raise_for_status()
+        j = r.json()
+        res = (j or {}).get("quoteResponse", {}).get("result", [])
+        if not res:
+            return None
+        v = res[0].get("regularMarketPrice")
+        try:
+            return float(v) if v is not None else None
+        except Exception:
+            return None
+    val = await _with_backoff_http(fetch)
+    _cache_put(key, val)
+    return val
+
+async def yahoo_quote_pct(sym: str) -> Optional[float]:
+    key = ("yf_pct", sym)
+    hit = _cache_get(key, ttl_ms=600_000)
+    if hit is not None:
+        return hit
+    async def fetch():
+        r = await _client.get(YF_BASE_QUOTE, params={"symbols": sym}, timeout=10)
+        r.raise_for_status()
+        j = r.json()
+        res = (j or {}).get("quoteResponse", {}).get("result", [])
+        if not res:
+            return None
+        v = res[0].get("regularMarketChangePercent")
+        try:
+            return float(v) if v is not None else None
+        except Exception:
+            return None
+    val = await _with_backoff_http(fetch)
+    _cache_put(key, val)
+    return val
+
+async def yahoo_series_5m(sym: str) -> Optional[Tuple[list, float]]:
+    key = ("yf_series5m", sym)
+    hit = _cache_get(key, ttl_ms=600_000)
+    if hit is not None:
+        return hit
+    async def fetch():
+        url = f"{YF_BASE_CHART}{sym}"
+        params = {"interval": "5m", "range": "1d", "includePrePost": "false"}
+        r = await _client.get(url, params=params, timeout=12)
+        r.raise_for_status()
+        j = r.json()
+        r0 = (j or {}).get("chart", {}).get("result", [])
+        if not r0:
+            return None
+        r1 = r0[0]
+        ts = r1.get("timestamp", [])
+        ind = (r1.get("indicators", {}) or {}).get("quote", [{}])[0]
+        opens = ind.get("open", [])
+        highs = ind.get("high", [])
+        lows = ind.get("low", [])
+        closes = ind.get("close", [])
+        candles = []
+        for i in range(min(len(ts), len(opens), len(highs), len(lows), len(closes))):
+            try:
+                tms = int(ts[i]) * 1000
+                o = float(opens[i]) if opens[i] is not None else None
+                h = float(highs[i]) if highs[i] is not None else None
+                l = float(lows[i]) if lows[i] is not None else None
+                c = float(closes[i]) if closes[i] is not None else None
+                if None in (o, h, l, c):
+                    continue
+                candles.append({"t": tms, "o": o, "h": h, "l": l, "c": c})
+            except Exception:
+                continue
+        if not candles:
+            return None
+        last = candles[-1]["c"]
+        return candles, last
+    val = await _with_backoff_http(fetch)
+    if val is not None:
+        _cache_put(key, val)
+    return val
+
+
 def now_utc_ms() -> int:
     return int(time.time() * 1000)
 
@@ -511,23 +622,36 @@ async def get_candles(symbol: str):
         try:
             payload = await fetch_alpha(symbol)
         except Exception as e_alpha:
-            # Try a realtime Alpha FX last and synthesize candles to keep the app usable
+            # Try Yahoo 5m series as last-resort before other CSV/BI5 sources
             try:
-                last = await fetch_alpha_fx_last(symbol)
-                if last is not None:
-                    synth = _build_synthetic_candles_from_last(last)
-                    payload = (synth, last)
+                ys = _yf_symbol_xau()
+                ypayload = None
+                for s in ys:
+                    ypayload = await yahoo_series_5m(s)
+                    if ypayload:
+                        break
+                if ypayload:
+                    payload = ypayload
                 else:
-                    raise RuntimeError("Alpha FX last unavailable")
-            except Exception as e_alpha_last:
+                    raise RuntimeError("Yahoo series unavailable")
+            except Exception as e_yahoo_series:
+                # Try a realtime Alpha FX last and synthesize candles to keep the app usable
                 try:
-                    payload = await fetch_stooq(symbol)
-                except Exception as e_stooq:
+                    last = await fetch_alpha_fx_last(symbol)
+                    if last is not None:
+                        synth = _build_synthetic_candles_from_last(last)
+                        payload = (synth, last)
+                    else:
+                        raise RuntimeError("Alpha FX last unavailable")
+                except Exception as e_alpha_last:
                     try:
-                        # Use shorter timeout path already inside fetch_dukascopy; if still fails, bubble up
-                        payload = await fetch_dukascopy(symbol)
-                    except Exception as e_duka:
-                        raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Alpha FX last failed: {e_alpha_last}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
+                        payload = await fetch_stooq(symbol)
+                    except Exception as e_stooq:
+                        try:
+                            # Use shorter timeout path already inside fetch_dukascopy; if still fails, bubble up
+                            payload = await fetch_dukascopy(symbol)
+                        except Exception as e_duka:
+                            raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
@@ -990,6 +1114,16 @@ async def home():
         except Exception:
             logging.exception("home: dxy pct failed")
             provider_status["td_pct:DXY"] = False
+            # Yahoo fallback for DXY pct
+            try:
+                yp = await yahoo_quote_pct("^DXY")
+                if yp is not None:
+                    drivers.append({"key": "dxyZ", "value": float(yp), "stale": False})
+                    provider_status["yahoo:pct:DXY"] = True
+                else:
+                    provider_status["yahoo:pct:DXY"] = False
+            except Exception:
+                provider_status["yahoo:pct:DXY"] = False
         try:
             vix_pct = await td_quote_pct("VIX")
             if vix_pct is not None:
@@ -998,6 +1132,15 @@ async def home():
         except Exception:
             logging.exception("home: vix pct failed")
             provider_status["td_pct:VIX"] = False
+            try:
+                yp = await yahoo_quote_pct("^VIX")
+                if yp is not None:
+                    drivers.append({"key": "vixZ", "value": float(yp), "stale": False})
+                    provider_status["yahoo:pct:VIX"] = True
+                else:
+                    provider_status["yahoo:pct:VIX"] = False
+            except Exception:
+                provider_status["yahoo:pct:VIX"] = False
         try:
             spy_pct = await td_quote_pct("SPY")
             if spy_pct is not None:
@@ -1007,6 +1150,15 @@ async def home():
         except Exception:
             logging.exception("home: spy pct failed")
             provider_status["td_pct:SPY"] = False
+            try:
+                yp = await yahoo_quote_pct("SPY")
+                if yp is not None:
+                    drivers.append({"key": "risk_on", "value": float(yp), "stale": False})
+                    provider_status["yahoo:pct:SPY"] = True
+                else:
+                    provider_status["yahoo:pct:SPY"] = False
+            except Exception:
+                provider_status["yahoo:pct:SPY"] = False
         try:
             fred = await fetch_fred_series("DFII10", max_points=365)
             if fred and fred.get("values"):
@@ -1151,6 +1303,30 @@ async def home():
         except Exception:
             logging.exception("home: td quote failed")
             provider_status["td_quote:XAUUSD"] = False
+            # Alpha realtime last, then Yahoo last
+            if last_price is None:
+                try:
+                    last_alpha = await fetch_alpha_fx_last("XAUUSD")
+                    if last_alpha is not None:
+                        last_price = last_alpha
+                        provider_status["alpha:last:XAUUSD"] = True
+                except Exception:
+                    provider_status["alpha:last:XAUUSD"] = False
+                if last_price is None:
+                    try:
+                        # try spot, then futures
+                        lp = None
+                        for s in _yf_symbol_xau():
+                            lp = await yahoo_last(s)
+                            if lp is not None:
+                                break
+                        if lp is not None:
+                            last_price = lp
+                            provider_status["yahoo:last:XAUUSD"] = True
+                        else:
+                            provider_status["yahoo:last:XAUUSD"] = False
+                    except Exception:
+                        provider_status["yahoo:last:XAUUSD"] = False
 
         # Quality state from spread/latency (best effort)
         latency_ms = 0
