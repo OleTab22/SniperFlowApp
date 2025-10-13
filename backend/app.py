@@ -297,13 +297,17 @@ async def fetch_alpha(symbol: str):
 
 
 async def fetch_alpha_fx_last(symbol: str) -> Optional[float]:
-    """Alpha Vantage realtime FX last using CURRENCY_EXCHANGE_RATE. Returns mid/last rate if available.
+    """Alpha Vantage realtime FX last using CURRENCY_EXCHANGE_RATE. Cached.
        Docs: https://www.alphavantage.co/documentation/
     """
     if symbol.upper() != "XAUUSD":
         return None
     if not ALPHA_KEY:
         return None
+    key = ("alpha_fx_last", symbol.upper())
+    hit = _cache.get(key)
+    if hit and (now_utc_ms() - hit[0]) < 120_000:
+        return hit[1]
     params = {
         "function": "CURRENCY_EXCHANGE_RATE",
         "from_currency": "XAU",
@@ -315,6 +319,9 @@ async def fetch_alpha_fx_last(symbol: str) -> Optional[float]:
     j = r.json()
     note = j.get("Note") if isinstance(j, dict) else None
     if note:
+        # throttle: serve stale if we have it
+        if hit:
+            return hit[1]
         return None
     err = j.get("Error Message") if isinstance(j, dict) else None
     if err:
@@ -322,7 +329,47 @@ async def fetch_alpha_fx_last(symbol: str) -> Optional[float]:
     data = j.get("Realtime Currency Exchange Rate", {}) if isinstance(j, dict) else {}
     v = data.get("5. Exchange Rate") or data.get("Exchange Rate")
     try:
-        return float(v) if v is not None else None
+        val = float(v) if v is not None else None
+        _cache[key] = (now_utc_ms(), val)
+        return val
+    except Exception:
+        return None
+async def fetch_alpha_global_quote_pct(symbol: str) -> Optional[float]:
+    """Alpha Vantage GLOBAL_QUOTE percent change for equities/ETFs (e.g., SPY)."""
+    if not ALPHA_KEY:
+        return None
+    key = ("alpha_pct", symbol.upper())
+    hit = _cache.get(key)
+    if hit and (now_utc_ms() - hit[0]) < 600_000:
+        return hit[1]
+    params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": ALPHA_KEY}
+    r = await _client.get(ALPHA_BASE, params=params, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    note = j.get("Note") if isinstance(j, dict) else None
+    if note:
+        return hit[1] if hit else None
+    q = (j or {}).get("Global Quote", {})
+    pct_str = q.get("10. change percent") or q.get("change percent")
+    try:
+        val = float(str(pct_str).replace("%", ""))
+        _cache[key] = (now_utc_ms(), val)
+        return val
+    except Exception:
+        return None
+
+async def fetch_fred_pct(series_id: str) -> Optional[float]:
+    s = await fetch_fred_series(series_id, max_points=2)
+    try:
+        vals = s["values"]
+        if not vals:
+            return None
+        if len(vals) == 1:
+            return 0.0
+        a, b = vals[-2], vals[-1]
+        if a == 0:
+            return 0.0
+        return (b - a) / a * 100.0
     except Exception:
         return None
 
@@ -1174,16 +1221,22 @@ async def home():
                 dxy_added = True
             provider_status["td_pct:DXY"] = dxy_added
             if not dxy_added:
-                # Yahoo fallback for DXY pct
+                # Yahoo then FRED fallback
                 try:
                     yp = await yahoo_quote_pct("^DXY")
                     if yp is not None:
                         drivers.append({"key": "dxyZ", "value": float(yp), "stale": False})
                         provider_status["yahoo:pct:DXY"] = True
+                        dxy_added = True
                     else:
                         provider_status["yahoo:pct:DXY"] = False
                 except Exception:
                     provider_status["yahoo:pct:DXY"] = False
+                if not dxy_added:
+                    # FRED DEXUSEU or DTWEXBGS percent (as coarse fallback)
+                    fp = await fetch_fred_pct("DTWEXBGS")
+                    if fp is not None:
+                        drivers.append({"key": "dxyZ", "value": float(fp), "stale": False})
         except Exception:
             logging.exception("home: dxy pct failed")
             provider_status["td_pct:DXY"] = False
@@ -1234,15 +1287,21 @@ async def home():
                 spy_added = True
             provider_status["td_pct:SPY"] = spy_added
             if not spy_added:
+                tried_alpha = False
                 try:
                     yp = await yahoo_quote_pct("SPY")
                     if yp is not None:
                         drivers.append({"key": "risk_on", "value": float(yp), "stale": False})
                         provider_status["yahoo:pct:SPY"] = True
+                        spy_added = True
                     else:
                         provider_status["yahoo:pct:SPY"] = False
                 except Exception:
                     provider_status["yahoo:pct:SPY"] = False
+                if not spy_added:
+                    ap = await fetch_alpha_global_quote_pct("SPY")
+                    if ap is not None:
+                        drivers.append({"key": "risk_on", "value": float(ap), "stale": False})
         except Exception:
             logging.exception("home: spy pct failed")
             provider_status["td_pct:SPY"] = False
