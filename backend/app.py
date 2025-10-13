@@ -160,6 +160,48 @@ async def fetch_alpha(symbol: str):
     return candles, last_price
 
 
+async def fetch_alpha_fx_last(symbol: str) -> Optional[float]:
+    """Alpha Vantage realtime FX last using CURRENCY_EXCHANGE_RATE. Returns mid/last rate if available.
+       Docs: https://www.alphavantage.co/documentation/
+    """
+    if symbol.upper() != "XAUUSD":
+        return None
+    if not ALPHA_KEY:
+        return None
+    params = {
+        "function": "CURRENCY_EXCHANGE_RATE",
+        "from_currency": "XAU",
+        "to_currency": "USD",
+        "apikey": ALPHA_KEY,
+    }
+    r = await _client.get(ALPHA_BASE, params=params, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    note = j.get("Note") if isinstance(j, dict) else None
+    if note:
+        return None
+    err = j.get("Error Message") if isinstance(j, dict) else None
+    if err:
+        return None
+    data = j.get("Realtime Currency Exchange Rate", {}) if isinstance(j, dict) else {}
+    v = data.get("5. Exchange Rate") or data.get("Exchange Rate")
+    try:
+        return float(v) if v is not None else None
+    except Exception:
+        return None
+
+
+def _build_synthetic_candles_from_last(last: float, bars: int = 60, interval_min: int = 5):
+    """Produce a flat synthetic OHLC series ending now for UI continuity when providers fail."""
+    end_ms = now_utc_ms()
+    step_ms = interval_min * 60 * 1000
+    candles = []
+    for i in range(bars, 0, -1):
+        t = end_ms - i * step_ms
+        candles.append({"t": t, "o": last, "h": last, "l": last, "c": last})
+    return candles
+
+
 async def fetch_stooq(symbol: str):
     # Stooq free CSV, supports 5-minute bars for FX pairs
     pair = symbol.lower()
@@ -465,16 +507,27 @@ async def get_candles(symbol: str):
             pass
         payload = (candles_td, last_sane)
     except Exception as e_twelve:
+        # Prefer Alpha first (official 5min FX intraday) to avoid long Dukascopy timeouts
         try:
-            payload = await fetch_dukascopy(symbol)
-        except Exception as e_duka:
+            payload = await fetch_alpha(symbol)
+        except Exception as e_alpha:
+            # Try a realtime Alpha FX last and synthesize candles to keep the app usable
             try:
-                payload = await fetch_stooq(symbol)
-            except Exception as e_stooq:
+                last = await fetch_alpha_fx_last(symbol)
+                if last is not None:
+                    synth = _build_synthetic_candles_from_last(last)
+                    payload = (synth, last)
+                else:
+                    raise RuntimeError("Alpha FX last unavailable")
+            except Exception as e_alpha_last:
                 try:
-                    payload = await fetch_alpha(symbol)
-                except Exception as e_alpha:
-                    raise RuntimeError(f"TwelveData failed: {e_twelve}; Dukascopy failed: {e_duka}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
+                    payload = await fetch_stooq(symbol)
+                except Exception as e_stooq:
+                    try:
+                        # Use shorter timeout path already inside fetch_dukascopy; if still fails, bubble up
+                        payload = await fetch_dukascopy(symbol)
+                    except Exception as e_duka:
+                        raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Alpha FX last failed: {e_alpha_last}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
