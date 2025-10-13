@@ -174,7 +174,7 @@ async def fetch_twelvedata(symbol: str):
     params = {
         "symbol": sym,
         "interval": "5min",
-        "outputsize": "390",  # roughly 2 trading days of 5m bars
+        "outputsize": "60",  # last ~5 hours to reduce quota/bytes
         "apikey": TWELVE_KEY,
         "timezone": "UTC",
         "format": "JSON",
@@ -323,9 +323,9 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
         dd = dt_hr.day
         hh = dt_hr.hour
         url = f"{base}/{instr}/{yyyy:04d}/{mm0:02d}/{dd:02d}/{hh:02d}h_ticks.bi5"
-        # Early stop if current/next hour not available (404 or empty)
+        # Early stop if hour not available (404 or empty); don't hammer later hours
         r = await _client.get(url, timeout=10)
-        if r.status_code != 200 or not r.content:
+        if r.status_code == 404 or not r.content:
             break
         try:
             raw = lzma.decompress(r.content)

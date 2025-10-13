@@ -1,41 +1,49 @@
 package com.example.sniperflow
 
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
+// removed unused Context import
+// R already in this package via import; redundant qualifier warnings will be fixed below
 import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.View
+import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.content.res.ResourcesCompat
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.example.sniperflow.levels.LevelsActivity
+import com.example.sniperflow.network.PriceWsClient
 import com.example.sniperflow.network.RetrofitModule
+import com.example.sniperflow.notifications.NotificationsActivity
+import com.example.sniperflow.settings.SettingsActivity
 import com.example.sniperflow.settings.SettingsRepository
 import com.example.sniperflow.ui.BiasRingView
+import com.example.sniperflow.ui.SparklineView
+import com.example.sniperflow.ui.home.AlertsAdapter
+import com.example.sniperflow.ui.journal.JournalActivity
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
-import androidx.core.content.ContextCompat
 import com.google.android.material.snackbar.Snackbar
-import kotlinx.coroutines.launch
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.text.SimpleDateFormat
-import java.util.TimeZone
-import com.example.sniperflow.ui.SparklineView
 import java.util.Locale
-import androidx.core.content.edit
-import androidx.core.content.res.ResourcesCompat
-import android.content.SharedPreferences
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import androidx.recyclerview.widget.RecyclerView
-import com.example.sniperflow.ui.home.AlertsAdapter
-import android.widget.ImageView
-import android.graphics.drawable.GradientDrawable
-import android.widget.Toast
-import okhttp3.OkHttpClient
-import com.example.sniperflow.network.PriceWsClient
-// R already in this package via import; redundant qualifier warnings will be fixed below
-import com.google.android.material.bottomnavigation.BottomNavigationView
+import java.util.TimeZone
 
 class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
@@ -78,7 +86,7 @@ class MainActivity : AppCompatActivity() {
             Snackbar.make(v, "Alerts coming soon", Snackbar.LENGTH_SHORT).show()
         }
         // Alerts switch (read-only hook for now)
-        findViewById<android.widget.Switch>(R.id.alertsSwitch)?.setOnCheckedChangeListener { _, on ->
+        findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.alertsSwitch)?.setOnCheckedChangeListener { _, on ->
             Toast.makeText(this, if (on) "Alerts ON" else "Alerts OFF", Toast.LENGTH_SHORT).show()
         }
         findViewById<View>(R.id.fabAdd)?.setOnClickListener { v ->
@@ -101,10 +109,10 @@ class MainActivity : AppCompatActivity() {
 
         // Top bar actions
         findViewById<ImageView>(R.id.btnSettings)?.setOnClickListener {
-            startActivity(Intent(this, com.example.sniperflow.settings.SettingsActivity::class.java))
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<ImageView>(R.id.btnNotifications)?.setOnClickListener {
-            startActivity(Intent(this, com.example.sniperflow.notifications.NotificationsActivity::class.java))
+            startActivity(Intent(this, NotificationsActivity::class.java))
         }
 
         // Pull-to-refresh
@@ -144,19 +152,19 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
                 R.id.nav_journal -> {
-                    startActivity(Intent(this, com.example.sniperflow.ui.journal.JournalActivity::class.java))
+                    startActivity(Intent(this, JournalActivity::class.java))
                     true
                 }
                 R.id.nav_alerts -> {
-                    startActivity(Intent(this, com.example.sniperflow.notifications.NotificationsActivity::class.java))
+                    startActivity(Intent(this, NotificationsActivity::class.java))
                     true
                 }
                 R.id.nav_chart -> {
-                    startActivity(Intent(this, com.example.sniperflow.levels.LevelsActivity::class.java))
+                    startActivity(Intent(this, LevelsActivity::class.java))
                     true
                 }
                 R.id.nav_settings -> {
-                    startActivity(Intent(this, com.example.sniperflow.settings.SettingsActivity::class.java))
+                    startActivity(Intent(this, SettingsActivity::class.java))
                     true
                 }
                 else -> false
@@ -205,13 +213,13 @@ class MainActivity : AppCompatActivity() {
                     // Update connection dot and maybe compute quality (latency/spread) later
                     setConnStatusGreen()
                     // Update status label to WS
-                    findViewById<TextView>(R.id.statusLabel)?.text = "WS"
+                    findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label)
                 },
                 onState = { st ->
                     when (st) {
                         PriceWsClient.State.CONNECTING -> setConnStatusAmber()
-                        PriceWsClient.State.OPEN -> { setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = "WS" }
-                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> { setConnStatusRed(); findViewById<TextView>(R.id.statusLabel)?.text = "Offline" }
+                        PriceWsClient.State.OPEN -> { setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label) }
+                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> { setConnStatusRed(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.offline_label) }
                     }
                 }
             )
@@ -348,8 +356,8 @@ class MainActivity : AppCompatActivity() {
                     val updated = home.price?.updatedAt ?: 0L
                     val staleMin = (((System.currentTimeMillis()) - updated) / 60000).toInt()
                     val label = findViewById<TextView>(R.id.statusLabel)
-                    val cur = label?.text?.toString()?.lowercase(Locale.getDefault()) ?: ""
-                    val base = if (cur.contains("ws")) "WS" else if (cur.contains("offline")) "Offline" else "Polling"
+                    val cur = (label?.text.toString()).lowercase(Locale.getDefault())
+                    val base = if (cur.contains("ws")) getString(R.string.ws_label) else if (cur.contains("offline")) getString(R.string.offline_label) else getString(R.string.polling_label)
                     label?.text = if (staleMin >= 2) "$base • Stale ${staleMin}m" else base
                 }
 
@@ -375,13 +383,13 @@ class MainActivity : AppCompatActivity() {
                         lastScore - confScore >= 5 -> "▼"
                         else -> "•"
                     }
-                    confluence?.text = "Confluence ${confScore} ${arrow}"
+                    confluence?.text = getString(R.string.confluence_fmt, confScore, arrow)
                     // Persist for next render
                     prefs.edit { putInt("last_conf_score", confScore) }
                     // Explain taps
                     fun showExplain(title: String, body: String) {
                         val dialog = android.app.AlertDialog.Builder(this@MainActivity)
-                            .setView(layoutInflater.inflate(R.layout.dialog_driver_detail, null, false))
+                            .setView(layoutInflater.inflate(R.layout.dialog_driver_detail, findViewById(android.R.id.content), false))
                             .create()
                         dialog.show()
                         dialog.findViewById<TextView>(R.id.tvTitle)?.text = title
@@ -398,10 +406,10 @@ class MainActivity : AppCompatActivity() {
                 // Quality chip
                 home.quality?.let { q ->
                     val view = findViewById<TextView>(R.id.chipQuality)
-                    view?.text = when ((q.state ?: "OK").uppercase()) {
-                        "OK" -> "Quality OK"
-                        "DEGRADED" -> "Quality Degraded"
-                        else -> "Quality Poor"
+                    view?.text = when ((q.state ?: "OK").uppercase(Locale.getDefault())) {
+                        "OK" -> getString(R.string.quality_ok)
+                        "DEGRADED" -> getString(R.string.quality_degraded)
+                        else -> getString(R.string.quality_poor)
                     }
                     val state = (q.state ?: "OK").uppercase()
                     val color = when (state) {
@@ -417,11 +425,11 @@ class MainActivity : AppCompatActivity() {
                     when (state) {
                         "DEGRADED" -> {
                             banner?.visibility = View.VISIBLE
-                            bannerText?.text = "Degraded feed — using cached/low quality quotes."
+                            bannerText?.text = getString(R.string.feed_degraded_text)
                         }
                         "POOR" -> {
                             banner?.visibility = View.VISIBLE
-                            bannerText?.text = "Stale feed — data may be delayed."
+                            bannerText?.text = getString(R.string.feed_stale_text)
                         }
                         else -> banner?.visibility = View.GONE
                     }
@@ -448,8 +456,8 @@ class MainActivity : AppCompatActivity() {
                     val last = home.price?.last
                     val dist = if (mid != null && last != null) kotlin.math.abs(last - mid) else null
                     findViewById<TextView>(R.id.sessionMidText)?.text = if (mid != null && dist != null) {
-                        "Session 50% ${String.format(Locale.getDefault(), "%.2f", mid)} • Δ ${String.format(Locale.getDefault(), "%.2f", dist)}"
-                    } else "Session 50% —"
+                        getString(R.string.session_mid_fmt, mid, dist)
+                    } else getString(R.string.session_mid_fmt, java.lang.Double.NaN, java.lang.Double.NaN).replace("NaN", "—")
                 }
 
                 // Bias from nowcast
@@ -519,7 +527,7 @@ class MainActivity : AppCompatActivity() {
                 // Haptics: bias flip and news lock
                 runCatching {
                     if (home.gates?.newsLock == true) {
-                        vibrateOnce(30, 60)
+                        vibrateOnce()
                     }
                 }
 
@@ -531,9 +539,14 @@ class MainActivity : AppCompatActivity() {
                     countdownJob = lifecycleScope.launch {
                         while (isActive) {
                             runCatching {
-                                val targetMs = (event.time_utc?.toLongOrNull() ?: 0L) * 1000L
+                                val targetMs = (event.time_utc.toLongOrNull() ?: 0L) * 1000L
                                 val mins = ((targetMs - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
-                                pill.text = getString(R.string.event_countdown_fmt, event.title, mins, event.impact.replaceFirstChar { it.uppercase() })
+                                pill.text = getString(
+                                    R.string.event_countdown_fmt,
+                                    event.title,
+                                    mins,
+                                    event.impact.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+                                )
                                 event.lock_window?.let { lw ->
                                     val start = (lw.start_utc.toLongOrNull() ?: 0L) * 1000L
                                     val end = (lw.end_utc.toLongOrNull() ?: 0L) * 1000L
@@ -552,9 +565,13 @@ class MainActivity : AppCompatActivity() {
                 home.alerts?.let { list -> alertsAdapter.submitList(list.take(3)) }
 
                 // Plan-Lock banner
-                val locked = (home.gates?.planLock == true)
-                findViewById<View>(R.id.bannerPlanLock)?.visibility = if (locked) View.VISIBLE else View.GONE
-                if (locked) findViewById<TextView>(R.id.tvBannerText)?.text = home.gates?.reason ?: "Your plan is protecting you. New entries locked."
+                home.gates?.let { gates ->
+                    val locked = gates.planLock == true
+                    findViewById<View>(R.id.bannerPlanLock)?.visibility = if (locked) View.VISIBLE else View.GONE
+                    if (locked) findViewById<TextView>(R.id.tvBannerText)?.text = gates.reason ?: "Your plan is protecting you. New entries locked."
+                } ?: run {
+                    findViewById<View>(R.id.bannerPlanLock)?.visibility = View.GONE
+                }
 
                 // Save lightweight cache for fast first paint next launch
                 runCatching {
@@ -576,7 +593,7 @@ class MainActivity : AppCompatActivity() {
                 setConnStatusRed()
                 // Offline banner: show cached
                 findViewById<View>(R.id.bannerFeed)?.visibility = View.VISIBLE
-                findViewById<TextView>(R.id.tvBannerFeedText)?.text = "Offline — showing cached"
+                findViewById<TextView>(R.id.tvBannerFeedText)?.text = getString(R.string.offline_cached_text)
                 findViewById<View>(R.id.livePriceCard)?.let { Snackbar.make(it, t.message ?: "Failed to load", Snackbar.LENGTH_LONG).show() }
             }
             finally {
@@ -600,48 +617,47 @@ class MainActivity : AppCompatActivity() {
         val pdlVal = findViewById<TextView>(R.id.pdlVal)
         val miniChart = findViewById<SparklineView>(R.id.miniChart)
 
-        priceText.text = String.format("%.2f", c.last)
+        priceText.text = String.format(Locale.getDefault(), "%.2f", c.last)
         val pct = c.DO?.let { if (it != 0.0) (c.last - it) / it * 100.0 else 0.0 }
-        changeText.text = pct?.let { String.format("%+.2f%%", it) } ?: "—"
+        changeText.text = pct?.let { String.format(Locale.getDefault(), "%+.2f%%", it) } ?: "—"
         pct?.let {
             val color = if (it >= 0) ContextCompat.getColor(this, R.color.colorPositive)
             else ContextCompat.getColor(this, R.color.colorNegative)
             changeText.setTextColor(color)
         }
-        val sdf = SimpleDateFormat("HH:mm:ss"); sdf.timeZone = TimeZone.getDefault()
-        updatedText.text = "Updated ${sdf.format(java.util.Date(c.asOf))}"
-
-        doVal.text = "DO ${c.DO?.let { String.format("%.2f", it) } ?: "-"}"
-        pdhVal.text = "PDH ${c.PDH?.let { String.format("%.2f", it) } ?: "-"}"
-        pdlVal.text = "PDL ${c.PDL?.let { String.format("%.2f", it) } ?: "-"}"
+        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault()); sdf.timeZone = TimeZone.getDefault()
+        updatedText.text = getString(R.string.updated_fmt, sdf.format(java.util.Date(c.asOf)))
+        doVal.text = c.DO?.let { getString(R.string.do_fmt, it) } ?: getString(R.string.do_fmt, Double.NaN).replace("NaN", "—")
+        pdhVal.text = c.PDH?.let { getString(R.string.pdh_fmt, it) } ?: getString(R.string.pdh_fmt, Double.NaN).replace("NaN", "—")
+        pdlVal.text = c.PDL?.let { getString(R.string.pdl_fmt, it) } ?: getString(R.string.pdl_fmt, Double.NaN).replace("NaN", "—")
         c.closes?.let { miniChart.setSeries(it) }
-        findViewById<TextView>(R.id.high24Text)?.text = c.high24h?.let { "H24 ${String.format("%.2f", it)}" } ?: "H24 —"
-        findViewById<TextView>(R.id.low24Text)?.text = c.low24h?.let { "L24 ${String.format("%.2f", it)}" } ?: "L24 —"
+        findViewById<TextView>(R.id.high24Text)?.text = c.high24h?.let { getString(R.string.h24_fmt, it) } ?: getString(R.string.h24_fmt, Double.NaN).replace("NaN", "—")
+        findViewById<TextView>(R.id.low24Text)?.text = c.low24h?.let { getString(R.string.l24_fmt, it) } ?: getString(R.string.l24_fmt, Double.NaN).replace("NaN", "—")
     }
 
     private fun setConnStatus(colorHex: String) {
         val dot = findViewById<View>(R.id.viewConnStatus) ?: return
         val bg = GradientDrawable()
         bg.shape = GradientDrawable.OVAL
-        bg.setColor(android.graphics.Color.parseColor(colorHex))
+        bg.setColor(colorHex.toColorInt())
         dot.background = bg
     }
     private fun setConnStatusGreen() = setConnStatus("#16A34A")
     private fun setConnStatusAmber() = setConnStatus("#F59E0B")
     private fun setConnStatusRed() = setConnStatus("#DC2626")
 
-    private fun vibrateOnce(durationMs: Long, amplitude: Int) {
+    private fun vibrateOnce(durationMs: Long = 30L, amplitude: Int = 60) {
         try {
             val vibrator = if (android.os.Build.VERSION.SDK_INT >= 31) {
-                val manager = getSystemService(android.os.VibratorManager::class.java)
+                val manager = getSystemService(VibratorManager::class.java)
                 manager?.defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
-                getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                getSystemService(VIBRATOR_SERVICE) as Vibrator
             }
             if (vibrator != null) {
                 if (android.os.Build.VERSION.SDK_INT >= 26) {
-                    vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, amplitude))
+                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
                 } else {
                     @Suppress("DEPRECATION")
                     vibrator.vibrate(durationMs)
