@@ -19,6 +19,17 @@
     <string name="driver_detail_title_fmt">%1$s driver</string>
     <string name="driver_detail_body_fmt">Value: %1$.2f%2$s\n%3$s</string>
     <string name="stale_label">(stale)</string>
+    <string name="ws_label">WS</string>
+    <string name="offline_label">Offline</string>
+    <string name="polling_label">Polling</string>
+    <string name="confluence_fmt">Confluence %1$d %2$s</string>
+    <string name="quality_ok">Quality OK</string>
+    <string name="quality_degraded">Quality Degraded</string>
+    <string name="quality_poor">Quality Poor</string>
+    <string name="feed_degraded_text">Degraded feed — using cached/low quality quotes.</string>
+    <string name="feed_stale_text">Stale feed — data may be delayed.</string>
+    <string name="offline_cached_text">Offline — showing cached</string>
+    <string name="session_mid_fmt">Session 50%% %1$.2f • Δ %2$.2f</string>
     <string name="add">Add</string>
     <!-- UI common -->
     <string name="journal_title">Journal</string>
