@@ -4,20 +4,29 @@
     <LinearLayout android:orientation="vertical" android:padding="16dp"
         android:layout_width="match_parent" android:layout_height="wrap_content">
 
-        <TextView android:id="@+id/title" android:textStyle="bold" android:textSize="20sp" android:text="Journal"/>
+        <TextView android:id="@+id/title" android:textStyle="bold" android:textSize="20sp" android:text="@string/journal_title"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
-        <TextView android:id="@+id/txtRRPlanned" android:layout_marginTop="8dp"/>
-        <TextView android:id="@+id/txtRRReal"/>
+        <TextView android:id="@+id/txtRRPlanned" android:layout_marginTop="8dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <TextView android:id="@+id/txtRRReal"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
-        <TextView android:id="@+id/txtContext" android:layout_marginTop="8dp"/>
+        <TextView android:id="@+id/txtContext" android:layout_marginTop="8dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
-        <TextView android:text="Setup" android:textStyle="bold" android:layout_marginTop="12dp"/>
-        <TextView android:id="@+id/txtSetup"/>
+        <TextView android:text="@string/setup_label" android:textStyle="bold" android:layout_marginTop="12dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <TextView android:id="@+id/txtSetup"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
-        <TextView android:text="Notes" android:textStyle="bold" android:layout_marginTop="12dp"/>
-        <TextView android:id="@+id/txtNotes"/>
+        <TextView android:text="@string/notes_label" android:textStyle="bold" android:layout_marginTop="12dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <TextView android:id="@+id/txtNotes"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
-        <TextView android:text="Screenshots" android:textStyle="bold" android:layout_marginTop="12dp"/>
+        <TextView android:text="@string/screenshots_label" android:textStyle="bold" android:layout_marginTop="12dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvShotsDetail" android:layout_width="match_parent"
             android:layout_height="120dp"/>

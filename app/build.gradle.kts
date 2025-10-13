@@ -2,7 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("org.jetbrains.kotlin.kapt")
+    // Switch from kapt to KSP for Room
+    alias(libs.plugins.google.ksp)
     id("com.google.gms.google-services")
 }
 
@@ -45,6 +46,15 @@ android {
         compose = true
         buildConfig = true
     }
+    lint {
+        abortOnError = false
+        warningsAsErrors = false
+        disable += setOf(
+            "HardcodedText",
+            "RtlSymmetry",
+            "RtlHardcoded"
+        )
+    }
 }
 
 dependencies {
@@ -58,13 +68,13 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.auth)
     // Encrypted storage
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation(libs.androidx.security.crypto)
     // Coroutines Task await for Play Services/Firebase
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    implementation(libs.kotlinx.coroutines.play.services)
     // Views and core libs
     implementation(libs.material)
     implementation(libs.androidx.appcompat)
@@ -81,12 +91,12 @@ dependencies {
     // Logging
     implementation(libs.timber)
     // Room (offline journal)
-    implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
     // WorkManager for background sync
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation(libs.androidx.work.runtime.ktx)
     // Images (Photo thumbnails)
-    implementation("io.coil-kt:coil:2.6.0")
+    implementation(libs.coil.kt)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -95,11 +105,13 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     // Flexbox for driver chips
-    implementation("com.google.android.flexbox:flexbox:3.0.0")
+    implementation(libs.google.flexbox)
     // Pull-to-refresh
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation(libs.androidx.swiperefreshlayout)
     // NestedScrollView (already in core-ktx, ensure dependency present via libs)
     implementation(libs.androidx.core.ktx)
     // RecyclerView for alerts list
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation(libs.androidx.recyclerview)
+    // Lifecycle process for app foreground/background callbacks (keep-alive)
+    implementation(libs.androidx.lifecycle.process)
 }

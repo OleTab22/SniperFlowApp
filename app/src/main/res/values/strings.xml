@@ -19,4 +19,15 @@
     <string name="driver_detail_title_fmt">%1$s driver</string>
     <string name="driver_detail_body_fmt">Value: %1$.2f%2$s\n%3$s</string>
     <string name="stale_label">(stale)</string>
+    <string name="add">Add</string>
+    <!-- UI common -->
+    <string name="journal_title">Journal</string>
+    <string name="setup_label">Setup</string>
+    <string name="notes_label">Notes</string>
+    <string name="screenshots_label">Screenshots</string>
+    <string name="loading_text">Loading…</string>
+    <string name="error_generic">Something went wrong</string>
+    <string name="retry">Retry</string>
+    <string name="empty_title">Nothing here yet</string>
+    <string name="empty_subtitle">Create your first item to get started.</string>
 </resources>
