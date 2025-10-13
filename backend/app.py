@@ -615,7 +615,30 @@ async def get_candles(symbol: str):
         if PRICE_SOURCE == "stooq":
             return await fetch_stooq(symbol)
         if PRICE_SOURCE == "alpha":
-            return await fetch_alpha(symbol)
+            # Be resilient even in forced alpha mode
+            try:
+                return await fetch_alpha(symbol)
+            except Exception:
+                # Fallback to Alpha realtime last + synthetic candles
+                try:
+                    last = await fetch_alpha_fx_last(symbol)
+                    if last is not None:
+                        return (_build_synthetic_candles_from_last(last), last)
+                except Exception:
+                    pass
+                # Try Yahoo series before other paths
+                try:
+                    for s in _yf_symbol_xau():
+                        ys = await yahoo_series_5m(s)
+                        if ys:
+                            return ys
+                except Exception:
+                    pass
+                # Final fallbacks
+                try:
+                    return await fetch_stooq(symbol)
+                except Exception:
+                    return await fetch_dukascopy(symbol)
 
     # Auto strategy with sanity checks
     try:
