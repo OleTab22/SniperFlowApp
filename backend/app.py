@@ -61,6 +61,16 @@ def _block_td_until_reset():
 YF_BASE_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/"
 YF_BASE_QUOTE = "https://query1.finance.yahoo.com/v7/finance/quote"
 
+def _yf_block_key():
+    return ("yf_blocked", "X")
+
+def _is_yf_blocked() -> bool:
+    hit = _cache.get(_yf_block_key())
+    return bool(hit and now_utc_ms() < hit[0])
+
+def _block_yf(minutes: int = 45):
+    _cache[_yf_block_key()] = (now_utc_ms() + minutes * 60 * 1000, True)
+
 async def _with_backoff_http(fn, tries: int = 3, base: float = 0.6):
     for i in range(tries):
         try:
@@ -87,8 +97,13 @@ async def yahoo_last(sym: str) -> Optional[float]:
     hit = _cache_get(key, ttl_ms=120_000)
     if hit is not None:
         return hit
+    if _is_yf_blocked():
+        return None
     async def fetch():
         r = await _client.get(YF_BASE_QUOTE, params={"symbols": sym}, timeout=10)
+        if r.status_code == 429:
+            _block_yf()
+            return None
         r.raise_for_status()
         j = r.json()
         res = (j or {}).get("quoteResponse", {}).get("result", [])
@@ -108,8 +123,13 @@ async def yahoo_quote_pct(sym: str) -> Optional[float]:
     hit = _cache_get(key, ttl_ms=600_000)
     if hit is not None:
         return hit
+    if _is_yf_blocked():
+        return None
     async def fetch():
         r = await _client.get(YF_BASE_QUOTE, params={"symbols": sym}, timeout=10)
+        if r.status_code == 429:
+            _block_yf()
+            return None
         r.raise_for_status()
         j = r.json()
         res = (j or {}).get("quoteResponse", {}).get("result", [])
@@ -129,10 +149,15 @@ async def yahoo_series_5m(sym: str) -> Optional[Tuple[list, float]]:
     hit = _cache_get(key, ttl_ms=600_000)
     if hit is not None:
         return hit
+    if _is_yf_blocked():
+        return None
     async def fetch():
         url = f"{YF_BASE_CHART}{sym}"
         params = {"interval": "5m", "range": "1d", "includePrePost": "false"}
         r = await _client.get(url, params=params, timeout=12)
+        if r.status_code == 429:
+            _block_yf()
+            return None
         r.raise_for_status()
         j = r.json()
         r0 = (j or {}).get("chart", {}).get("result", [])
