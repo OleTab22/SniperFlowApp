@@ -1,18 +1,22 @@
-import os, psycopg2, psycopg2.extras
+import os, time, logging
+import psycopg2, psycopg2.extras
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("sniperflow")
+
 # ---------- ENV ----------
-DATABASE_URL = os.getenv("DATABASE_URL")  # set in Render
-def db():
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def connect():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL not set")
     try:
         return psycopg2.connect(DATABASE_URL, sslmode="require")
     except Exception:
-        # Some providers enforce SSL in the URL already; retry without explicit sslmode
         return psycopg2.connect(DATABASE_URL)
 
 # ---------- APP ----------
@@ -27,58 +31,108 @@ except Exception:
     # If the import fails in certain environments, continue with DB-only API
     pass
 
-# ---------- DDL + seed (runs once per deploy; safe to re-run) ----------
-DDL = """
-CREATE TABLE IF NOT EXISTS levels(
-  id SERIAL PRIMARY KEY,
-  date DATE NOT NULL UNIQUE,
-  do  DOUBLE PRECISION,
-  pdh DOUBLE PRECISION,
-  pdl DOUBLE PRECISION
-);
-CREATE TABLE IF NOT EXISTS nowcast(
-  id SERIAL PRIMARY KEY,
-  ts TIMESTAMPTZ DEFAULT now(),
-  score INTEGER,
-  drivers JSONB
-);
-CREATE TABLE IF NOT EXISTS calendar(
-  id SERIAL PRIMARY KEY,
-  title TEXT,
-  time TIMESTAMPTZ,
-  impact TEXT
-);
-CREATE TABLE IF NOT EXISTS journal(
-  id SERIAL PRIMARY KEY,
-  user_id TEXT,
-  alert_id TEXT,
-  notes TEXT,
-  timestamp TIMESTAMPTZ DEFAULT now()
-);
-"""
+def migrate_once():
+    """
+    Durable, idempotent migration guarded by a Postgres advisory lock.
+    Creates tables and indexes if not present and seeds minimal rows when empty.
+    """
+    with connect() as conn:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            # Acquire advisory lock to ensure only 1 instance migrates
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (8675309,))
+            locked = cur.fetchone()[0]
+            if not locked:
+                log.info("Migration already in progress elsewhere; skipping.")
+                return
 
-SEED = """
-INSERT INTO levels(date,do,pdh,pdl)
-VALUES (CURRENT_DATE,1840.50,1851.20,1832.00)
-ON CONFLICT (date) DO NOTHING;
+            log.info("Running startup migration…")
 
--- Two sample events so Home isn't empty during closed markets
-INSERT INTO calendar(title,time,impact)
-SELECT * FROM (VALUES
-('US PMI', now() + interval '2 hour','High'),
-('FOMC Minutes', now() + interval '6 hour','High')
-) v(title,time,impact)
-WHERE NOT EXISTS (SELECT 1 FROM calendar);
-"""
+            # Schema
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS levels(
+                  id SERIAL PRIMARY KEY,
+                  date DATE NOT NULL UNIQUE,
+                  do  DOUBLE PRECISION,
+                  pdh DOUBLE PRECISION,
+                  pdl DOUBLE PRECISION
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS nowcast(
+                  id SERIAL PRIMARY KEY,
+                  ts TIMESTAMPTZ DEFAULT now(),
+                  score INTEGER,
+                  drivers JSONB
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS calendar(
+                  id SERIAL PRIMARY KEY,
+                  title TEXT,
+                  time TIMESTAMPTZ,
+                  impact TEXT
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS journal(
+                  id SERIAL PRIMARY KEY,
+                  user_id TEXT,
+                  alert_id TEXT,
+                  notes TEXT,
+                  timestamp TIMESTAMPTZ DEFAULT now()
+                );
+                """
+            )
+
+            # Indexes (safe to repeat)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar(time);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
+
+            # Seed minimal data only if empty
+            cur.execute("SELECT 1 FROM levels WHERE date = CURRENT_DATE LIMIT 1;")
+            if cur.fetchone() is None:
+                cur.execute(
+                    """
+                    INSERT INTO levels(date,do,pdh,pdl)
+                    VALUES (CURRENT_DATE,1840.50,1851.20,1832.00)
+                    ON CONFLICT (date) DO NOTHING;
+                    """
+                )
+
+            cur.execute("SELECT 1 FROM calendar LIMIT 1;")
+            if cur.fetchone() is None:
+                cur.execute(
+                    """
+                    INSERT INTO calendar(title,time,impact) VALUES
+                    ('US PMI', now() + interval '2 hour','High'),
+                    ('FOMC Minutes', now() + interval '6 hour','High');
+                    """
+                )
+
+            conn.commit()
+            log.info("Migration complete.")
 
 @app.on_event("startup")
-def migrate_and_seed():
+def _startup():
+    # backoff to survive cold boots / transient DB readiness
     if not DATABASE_URL:
         return
-    with db() as c, c.cursor() as cur:
-        cur.execute(DDL)
-        cur.execute(SEED)
-        c.commit()
+    for i in range(5):
+        try:
+            migrate_once()
+            break
+        except Exception as e:
+            wait = 2 ** i
+            log.warning("Migration attempt %s failed: %s (retrying in %ss)", i+1, e, wait)
+            time.sleep(wait)
 
 # ---------- MODELS ----------
 class JournalIn(BaseModel):
@@ -88,13 +142,29 @@ class JournalIn(BaseModel):
 
 # ---------- ROUTES ----------
 @app.get("/v1/health")
-def health(): return {"ok": True, "time": datetime.utcnow().isoformat()}
+def health():
+    # confirm schema exists (permanent health signal)
+    with connect() as c, c.cursor() as cur:
+        cur.execute(
+            """
+            SELECT to_regclass('public.levels') IS NOT NULL,
+                   to_regclass('public.calendar') IS NOT NULL,
+                   to_regclass('public.nowcast') IS NOT NULL,
+                   to_regclass('public.journal') IS NOT NULL;
+            """
+        )
+        lvl, cal, nwc, jrn = cur.fetchone()
+    return {
+        "ok": True,
+        "time": datetime.utcnow().isoformat(),
+        "schema": {"levels": lvl, "calendar": cal, "nowcast": nwc, "journal": jrn}
+    }
 
 @app.get("/v1/levels/today")
 def levels_today():
     if not DATABASE_URL:
         raise HTTPException(503, "DB not configured")
-    with db() as c, c.cursor() as cur:
+    with connect() as c, c.cursor() as cur:
         cur.execute("SELECT date,do,pdh,pdl FROM levels WHERE date = CURRENT_DATE")
         row = cur.fetchone()
         if not row: raise HTTPException(404, "No levels for today")
@@ -107,7 +177,7 @@ def calendar_upcoming(window: str = "8h"):
     if not DATABASE_URL:
         # fallback empty structure when DB is not configured
         return {"items": []}
-    with db() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+    with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute("""SELECT title,time,impact FROM calendar
                        WHERE time BETWEEN now() AND now() + interval %s
                        ORDER BY time ASC""", (f"{hrs} hour",))
@@ -116,7 +186,7 @@ def calendar_upcoming(window: str = "8h"):
 @app.get("/v1/nowcast")
 def nowcast():
     if DATABASE_URL:
-        with db() as c, c.cursor() as cur:
+        with connect() as c, c.cursor() as cur:
             cur.execute("SELECT score,drivers FROM nowcast ORDER BY ts DESC LIMIT 1")
             row = cur.fetchone()
             if row:
@@ -132,7 +202,7 @@ def nowcast():
 def post_journal(entry: JournalIn):
     if not DATABASE_URL:
         raise HTTPException(503, "DB not configured")
-    with db() as c, c.cursor() as cur:
+    with connect() as c, c.cursor() as cur:
         cur.execute("""INSERT INTO journal (user_id, alert_id, notes)
                        VALUES (%s,%s,%s) RETURNING id""",
                     (entry.user_id, entry.alert_id, entry.notes))
@@ -145,7 +215,7 @@ def post_journal(entry: JournalIn):
 def latest_journal():
     if not DATABASE_URL:
         raise HTTPException(503, "DB not configured")
-    with db() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+    with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute("SELECT * FROM journal ORDER BY timestamp DESC LIMIT 1")
         row = cur.fetchone()
         return dict(row) if row else {}
