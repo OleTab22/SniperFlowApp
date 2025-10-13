@@ -35,6 +35,28 @@ _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
 
 
+# ----- Provider circuit breakers -----
+def _td_block_key():
+    return ("td_blocked", "X")
+
+def _is_td_blocked() -> bool:
+    hit = _cache.get(_td_block_key())
+    if not hit:
+        return False
+    return now_utc_ms() < hit[0]
+
+def _block_td_until_reset():
+    try:
+        now = datetime.now(timezone.utc)
+        next_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        # small buffer (5 minutes)
+        deadline = int(next_midnight.timestamp() * 1000) + 5 * 60 * 1000
+        _cache[_td_block_key()] = (deadline, True)
+    except Exception:
+        # fallback 1 hour block
+        _cache[_td_block_key()] = (now_utc_ms() + 60 * 60 * 1000, True)
+
+
 def now_utc_ms() -> int:
     return int(time.time() * 1000)
 
@@ -96,6 +118,13 @@ async def fetch_alpha(symbol: str):
     r = await _client.get(ALPHA_BASE, params=params, timeout=15)
     r.raise_for_status()
     j = r.json()
+    # Alpha Vantage returns throttling/info in 'Note' or errors in 'Error Message'
+    note = j.get("Note") if isinstance(j, dict) else None
+    if note:
+        raise RuntimeError(f"Alpha: {note}")
+    err = j.get("Error Message") if isinstance(j, dict) else None
+    if err:
+        raise RuntimeError(f"Alpha: {err}")
     series = None
     for k in j.keys():
         if "Time Series" in k:
@@ -170,6 +199,8 @@ async def fetch_stooq(symbol: str):
 async def fetch_twelvedata(symbol: str):
     if not TWELVE_KEY:
         raise RuntimeError("TwelveData key missing")
+    if _is_td_blocked():
+        raise RuntimeError("TwelveData blocked until daily reset (quota exceeded)")
     # TwelveData expects symbols like XAU/USD
     sym = "XAU/USD" if symbol.upper() == "XAUUSD" else symbol
     params = {
@@ -184,6 +215,12 @@ async def fetch_twelvedata(symbol: str):
     r = await _client.get(TWELVE_BASE, params=params, timeout=15)
     r.raise_for_status()
     j = r.json()
+    if "status" in j and j.get("status") == "error":
+        # if quota error, trip breaker
+        msg = j.get("message", "error")
+        if "run out of API credits" in msg.lower():
+            _block_td_until_reset()
+        raise RuntimeError(f"TwelveData: {msg}")
     if "values" not in j:
         raise RuntimeError(f"TwelveData: {j.get('message') or 'no series'}")
     candles = []
@@ -221,11 +258,18 @@ async def fetch_twelvedata_price(symbol: str) -> float:
 async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
     if not TWELVE_KEY:
         raise RuntimeError("TwelveData key missing")
+    if _is_td_blocked():
+        raise RuntimeError("TwelveData blocked until daily reset (quota exceeded)")
     sym = "XAU/USD" if symbol.upper() == "XAUUSD" else symbol
     url = "https://api.twelvedata.com/quote"
     r = await _client.get(url, params={"symbol": sym, "apikey": TWELVE_KEY}, timeout=10)
     r.raise_for_status()
     j = r.json()
+    if isinstance(j, dict) and j.get("status") == "error":
+        msg = j.get("message", "error")
+        if "run out of API credits" in msg.lower():
+            _block_td_until_reset()
+        raise RuntimeError(f"TwelveData quote: {j}")
     if "bid" not in j and "ask" not in j and "price" not in j:
         raise RuntimeError(f"TwelveData quote: {j}")
     def _to_f(v):
@@ -254,6 +298,8 @@ async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
     """Percent change from Twelve Data quote (cached)."""
     if not TWELVE_KEY:
         return None
+    if _is_td_blocked():
+        return None
     key = ("td_pct", symbol.upper())
     hit = _cache.get(key)
     now = now_utc_ms()
@@ -263,6 +309,12 @@ async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
     r = await _client.get(url, params={"symbol": symbol, "apikey": TWELVE_KEY}, timeout=10)
     r.raise_for_status()
     j = r.json()
+    if isinstance(j, dict) and j.get("status") == "error":
+        msg = j.get("message", "error")
+        if "run out of API credits" in msg.lower():
+            _block_td_until_reset()
+        _cache[key] = (now, None)
+        return None
     pct_raw = str(j.get("percent_change", "0")).replace("%", "")
     try:
         pct = float(pct_raw)
