@@ -54,7 +54,7 @@ def migrate_once():
                 CREATE TABLE IF NOT EXISTS levels(
                   id SERIAL PRIMARY KEY,
                   date DATE NOT NULL UNIQUE,
-                  do  DOUBLE PRECISION,
+                  do_price DOUBLE PRECISION,
                   pdh DOUBLE PRECISION,
                   pdl DOUBLE PRECISION
                 );
@@ -101,7 +101,7 @@ def migrate_once():
             if cur.fetchone() is None:
                 cur.execute(
                     """
-                    INSERT INTO levels(date,do,pdh,pdl)
+                    INSERT INTO levels(date,do_price,pdh,pdl)
                     VALUES (CURRENT_DATE,1840.50,1851.20,1832.00)
                     ON CONFLICT (date) DO NOTHING;
                     """
@@ -165,11 +165,11 @@ def levels_today():
     if not DATABASE_URL:
         raise HTTPException(503, "DB not configured")
     with connect() as c, c.cursor() as cur:
-        cur.execute("SELECT date,do,pdh,pdl FROM levels WHERE date = CURRENT_DATE")
+        cur.execute("SELECT date, do_price, pdh, pdl FROM levels WHERE date = CURRENT_DATE")
         row = cur.fetchone()
         if not row: raise HTTPException(404, "No levels for today")
-        d, do, pdh, pdl = row
-        return {"date": str(d), "do": do, "pdh": pdh, "pdl": pdl}
+        d, do_price, pdh, pdl = row
+        return {"date": str(d), "do": do_price, "pdh": pdh, "pdl": pdl}
 
 @app.get("/v1/calendar/upcoming")
 def calendar_upcoming(window: str = "8h"):
