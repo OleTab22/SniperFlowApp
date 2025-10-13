@@ -4,6 +4,7 @@ import os
 import time
 import asyncio
 import httpx
+import logging
 from datetime import datetime, timedelta, timezone
 import pytz
 from typing import Optional, Tuple, Dict, Any
@@ -836,9 +837,16 @@ async def v1_alerts(since: Optional[int] = None):
 
 @app.get("/home")
 async def home():
+    provider_status: Dict[str, Any] = {"candles": None, "td_pct:DXY": None, "td_pct:VIX": None, "td_pct:SPY": None, "fred:DFII10": None, "td_quote:XAUUSD": None}
     try:
         # XAU intraday (with multi-provider fallback via get_candles)
-        candles, last_price = await get_candles("XAUUSD")
+        try:
+            candles, last_price = await get_candles("XAUUSD")
+            provider_status["candles"] = True
+        except Exception:
+            logging.exception("home: get_candles failed")
+            provider_status["candles"] = False
+            candles, last_price = [], None
 
         # Build arrays
         ts = [c["t"] for c in candles]
@@ -873,28 +881,36 @@ async def home():
             dxy_pct = await td_quote_pct("DXY")
             if dxy_pct is not None:
                 drivers.append({"key": "dxyZ", "value": float(dxy_pct), "stale": False})
+            provider_status["td_pct:DXY"] = True
         except Exception:
-            pass
+            logging.exception("home: dxy pct failed")
+            provider_status["td_pct:DXY"] = False
         try:
             vix_pct = await td_quote_pct("VIX")
             if vix_pct is not None:
                 drivers.append({"key": "vixZ", "value": float(vix_pct), "stale": False})
+            provider_status["td_pct:VIX"] = True
         except Exception:
-            pass
+            logging.exception("home: vix pct failed")
+            provider_status["td_pct:VIX"] = False
         try:
             spy_pct = await td_quote_pct("SPY")
             if spy_pct is not None:
                 # risk-on proxy (+SPY)
                 drivers.append({"key": "risk_on", "value": float(spy_pct), "stale": False})
+            provider_status["td_pct:SPY"] = True
         except Exception:
-            pass
+            logging.exception("home: spy pct failed")
+            provider_status["td_pct:SPY"] = False
         try:
             fred = await fetch_fred_series("DFII10", max_points=365)
             if fred and fred.get("values"):
                 # use z-score as before, sign inverted for gold tilt
                 drivers.append({"key": "realZ", "value": float(-_z_from_tail(fred["values"], lookback=252)), "stale": False})
+            provider_status["fred:DFII10"] = True
         except Exception:
-            pass
+            logging.exception("home: fred DFII10 failed")
+            provider_status["fred:DFII10"] = False
 
         # Calendar next red using existing stub
         cal = await calendar_upcoming("USD", 72)
@@ -1026,8 +1042,10 @@ async def home():
                 last_price = (bid + ask) / 2.0
                 spread = max(0.0, float(ask) - float(bid))
                 spread_pts = int(round(spread * 100))  # ~0.01 per point
+            provider_status["td_quote:XAUUSD"] = True
         except Exception:
-            pass
+            logging.exception("home: td quote failed")
+            provider_status["td_quote:XAUUSD"] = False
 
         # Quality state from spread/latency (best effort)
         latency_ms = 0
@@ -1136,9 +1154,25 @@ async def home():
                 },
             ],
         }
+        payload["provider_status"] = provider_status
         return payload
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        logging.exception("home: fatal error")
+        # Best-effort partial structure to avoid 502s
+        end_ms = now_utc_ms()
+        return {
+            "_warning": "partial",
+            "_err": str(e),
+            "price": {"last": None, "change24h": None, "pct24h": None, "high24h": None, "low24h": None, "updatedAt": end_ms, "closes": None, "bid": None, "ask": None},
+            "levels": {"do": {"price": None}, "pdh": {"price": None}, "pdl": {"price": None}},
+            "metrics": {"gap_pct": None, "range_to_atr20": None, "volume_percentile": None, "activity_index": None, "nowcast": {"direction": None, "confidence": None, "window_min": 60, "drivers": [], "model_id": "stub-000", "updated_at": end_ms}},
+            "calendar": {},
+            "sessions": {"overlap_with_ny": False, "current": None},
+            "quality": {"state": "OK", "spread_pts": None, "latency_ms": 0},
+            "gates": {"plan_lock": False, "reason": None, "news_lock": False},
+            "alerts": [],
+            "provider_status": provider_status
+        }
 
 
 # ---------------- v1 DRIVERS / NOWCAST / FEATURES ----------------
