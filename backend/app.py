@@ -1125,6 +1125,18 @@ async def home():
             provider_status["candles"] = False
             candles, last_price = [], None
 
+        # Ensure we have a last price even when series are down
+        if last_price is None:
+            try:
+                last_alpha = await fetch_alpha_fx_last("XAUUSD")
+                if last_alpha is not None:
+                    last_price = last_alpha
+                    provider_status["alpha:last:XAUUSD"] = True
+                else:
+                    provider_status["alpha:last:XAUUSD"] = False
+            except Exception:
+                provider_status["alpha:last:XAUUSD"] = False
+
         # Build arrays
         ts = [c["t"] for c in candles]
         o = [c["o"] for c in candles]
@@ -1155,10 +1167,23 @@ async def home():
         # Drivers via Twelve Data percent change (cached) and FRED daily
         drivers = []
         try:
+            dxy_added = False
             dxy_pct = await td_quote_pct("DXY")
             if dxy_pct is not None:
                 drivers.append({"key": "dxyZ", "value": float(dxy_pct), "stale": False})
-            provider_status["td_pct:DXY"] = True
+                dxy_added = True
+            provider_status["td_pct:DXY"] = dxy_added
+            if not dxy_added:
+                # Yahoo fallback for DXY pct
+                try:
+                    yp = await yahoo_quote_pct("^DXY")
+                    if yp is not None:
+                        drivers.append({"key": "dxyZ", "value": float(yp), "stale": False})
+                        provider_status["yahoo:pct:DXY"] = True
+                    else:
+                        provider_status["yahoo:pct:DXY"] = False
+                except Exception:
+                    provider_status["yahoo:pct:DXY"] = False
         except Exception:
             logging.exception("home: dxy pct failed")
             provider_status["td_pct:DXY"] = False
@@ -1173,10 +1198,22 @@ async def home():
             except Exception:
                 provider_status["yahoo:pct:DXY"] = False
         try:
+            vix_added = False
             vix_pct = await td_quote_pct("VIX")
             if vix_pct is not None:
                 drivers.append({"key": "vixZ", "value": float(vix_pct), "stale": False})
-            provider_status["td_pct:VIX"] = True
+                vix_added = True
+            provider_status["td_pct:VIX"] = vix_added
+            if not vix_added:
+                try:
+                    yp = await yahoo_quote_pct("^VIX")
+                    if yp is not None:
+                        drivers.append({"key": "vixZ", "value": float(yp), "stale": False})
+                        provider_status["yahoo:pct:VIX"] = True
+                    else:
+                        provider_status["yahoo:pct:VIX"] = False
+                except Exception:
+                    provider_status["yahoo:pct:VIX"] = False
         except Exception:
             logging.exception("home: vix pct failed")
             provider_status["td_pct:VIX"] = False
@@ -1190,11 +1227,22 @@ async def home():
             except Exception:
                 provider_status["yahoo:pct:VIX"] = False
         try:
+            spy_added = False
             spy_pct = await td_quote_pct("SPY")
             if spy_pct is not None:
-                # risk-on proxy (+SPY)
                 drivers.append({"key": "risk_on", "value": float(spy_pct), "stale": False})
-            provider_status["td_pct:SPY"] = True
+                spy_added = True
+            provider_status["td_pct:SPY"] = spy_added
+            if not spy_added:
+                try:
+                    yp = await yahoo_quote_pct("SPY")
+                    if yp is not None:
+                        drivers.append({"key": "risk_on", "value": float(yp), "stale": False})
+                        provider_status["yahoo:pct:SPY"] = True
+                    else:
+                        provider_status["yahoo:pct:SPY"] = False
+                except Exception:
+                    provider_status["yahoo:pct:SPY"] = False
         except Exception:
             logging.exception("home: spy pct failed")
             provider_status["td_pct:SPY"] = False
@@ -1427,7 +1475,7 @@ async def home():
                 "high24h": high_day,
                 "low24h": low_day,
                 "updatedAt": end_ms,
-                "closes": [c["c"] for c in intraday] if 'intraday' in locals() else None,
+                "closes": [c["c"] for c in intraday] if ('intraday' in locals() and intraday) else ([_ for _ in []]),
                 "bid": bid,
                 "ask": ask,
             },
