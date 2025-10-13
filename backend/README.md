@@ -9,14 +9,16 @@ Provides intraday levels for XAUUSD using free data sources with session-aware c
   - `{ asOf, lastPrice, daily:{DO,PDH,PDL}, sessions:{ sydney:{...}, tokyo:{...}, london:{...}, newyork:{...} } }`
 
 ## Data sources
-- Primary: Yahoo Finance (unofficial, no key)
-- Fallback: Alpha Vantage (free; set `ALPHAVANTAGE_API_KEY`)
+- Primary: Twelve Data (free tier; set `TWELVEDATA_API_KEY`)
+- FRED (daily; set `FRED_API_KEY`) for 10Y metrics
 
 ## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r backend/requirements.txt
 export ALPHAVANTAGE_API_KEY=your_key   # optional fallback
+export TWELVEDATA_API_KEY=your_key
+export FRED_API_KEY=your_key
 uvicorn backend.app:app --port 8787
 ```
 

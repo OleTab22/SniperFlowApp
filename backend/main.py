@@ -1,4 +1,7 @@
 import os, time, logging
+import asyncio
+import httpx
+from collections import defaultdict
 import psycopg2, psycopg2.extras
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +13,102 @@ log = logging.getLogger("sniperflow")
 
 # ---------- ENV ----------
 DATABASE_URL = os.getenv("DATABASE_URL")
+TD_KEY = os.getenv("TWELVEDATA_API_KEY")
+FRED_KEY = os.getenv("FRED_API_KEY")
+
+HEADERS = {"User-Agent": "sniperflow/1.0 (+contact)", "Accept": "application/json"}
+_CACHE: dict[str, tuple[float, object]] = {}
+_LOCKS = defaultdict(asyncio.Lock)
+
+async def _get_json(url: str, params: dict | None = None, timeout=12):
+    async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as s:
+        r = await s.get(url, params=params)
+        if r.status_code == 429:
+            # surface as a retriable error; our backoff will catch it
+            raise httpx.HTTPStatusError("rate limit", request=r.request, response=r)
+        r.raise_for_status()
+        return r.json()
+
+async def _with_backoff(coro_factory, tries=3, base=0.6):
+    for i in range(tries):
+        try:
+            return await coro_factory()
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout):
+            await asyncio.sleep(base * (2 ** i))
+    # last attempt (let exception bubble if fails)
+    return await coro_factory()
+
+async def _cached(key: str, ttl_sec: int, fetcher):
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    async with _LOCKS[key]:
+        hit = _CACHE.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+        val = await fetcher()
+        _CACHE[key] = (now + ttl_sec, val)
+        return val
+
+# ------------------ Providers (no Yahoo) ------------------
+
+async def td_quote_pct(symbol: str) -> float | None:
+    """Return percent change for symbol from Twelve Data, e.g. DXY, SPY, XAU/USD."""
+    if not TD_KEY:
+        return None
+    url = "https://api.twelvedata.com/quote"
+    def _parse(j):
+        # TD may return strings like "0.45" or "0.45%"; normalize
+        pct = str(j.get("percent_change", "0")).replace("%", "")
+        try:
+            return float(pct)
+        except Exception:
+            return None
+    async def fetch():
+        j = await _get_json(url, {"symbol": symbol, "apikey": TD_KEY})
+        if isinstance(j, dict) and j.get("status") == "error":
+            return None
+        return _parse(j)
+    return await _with_backoff(lambda: fetch())
+
+async def td_series_xau_5m() -> dict | None:
+    """Last ~60 x 5m candles for XAU/USD (kept small for quotas)."""
+    if not TD_KEY:
+        return None
+    url = "https://api.twelvedata.com/time_series"
+    async def fetch():
+        return await _get_json(url, {
+            "symbol": "XAU/USD",
+            "interval": "5min",
+            "outputsize": 60,      # last ~5 hours, not 390!
+            "apikey": TD_KEY,
+            "timezone": "UTC",
+            "order": "ASC",
+            "format": "JSON"
+        })
+    return await _with_backoff(lambda: fetch())
+
+async def fred_us10y_delta() -> float | None:
+    """Latest daily delta for 10Y yield (DGS10)."""
+    if not FRED_KEY:
+        return None
+    url = "https://api.stlouisfed.org/fred/series/observations"
+    async def fetch():
+        j = await _get_json(url, {
+            "series_id": "DGS10",
+            "api_key": FRED_KEY,
+            "file_type": "json",
+            "sort_order": "desc",
+            "limit": 2
+        }, timeout=20)
+        obs = [o for o in j.get("observations", []) if o.get("value") not in (".", None)]
+        if not obs:
+            return None
+        if len(obs) == 1:
+            return float(obs[0]["value"])
+        return float(obs[0]["value"]) - float(obs[1]["value"])
+    return await _with_backoff(lambda: fetch(), tries=2, base=1.2)
 
 def connect():
     if not DATABASE_URL:
@@ -183,20 +282,42 @@ def calendar_upcoming(window: str = "8h"):
                        ORDER BY time ASC""", (f"{hrs} hour",))
         return {"items": [dict(r) for r in cur.fetchall()]}
 
+def _score_from(drivers: list[dict]) -> int:
+    # DXY and US10Y up -> bearish (-); SPY up -> bullish (+)
+    m = {d["id"]: d for d in drivers}
+    s = (-float(m.get("DXY", {}).get("z", 0.0))
+         -float(m.get("US10Y", {}).get("z", 0.0))
+         +float(m.get("SPY", {}).get("z", 0.0)))
+    return max(-100, min(100, int(round(s * 20))))
+
 @app.get("/v1/nowcast")
-def nowcast():
-    if DATABASE_URL:
-        with connect() as c, c.cursor() as cur:
-            cur.execute("SELECT score,drivers FROM nowcast ORDER BY ts DESC LIMIT 1")
-            row = cur.fetchone()
-            if row:
-                s, drivers = row
-                return {"score": int(s), "drivers": drivers}
-    return {"score": 0, "drivers":[
-        {"id":"DXY","z":0,"w":0.33,"fresh":False},
-        {"id":"SPX","z":0,"w":0.33,"fresh":False},
-        {"id":"ATR","z":0,"w":0.34,"fresh":False}
-    ]}
+async def nowcast():
+    async def build():
+        # cache each provider to keep well below quotas
+        dxy = await _cached("pct:DXY", 120, lambda: td_quote_pct("DXY"))
+        spy = await _cached("pct:SPY", 120, lambda: td_quote_pct("SPY"))
+        us10y = await _cached("delta:DGS10", 6 * 3600, fred_us10y_delta)
+
+        drivers = []
+        if dxy is not None:  drivers.append({"id": "DXY",  "z": dxy,   "w": 0.34, "fresh": True, "staleSec": 0})
+        if us10y is not None:drivers.append({"id": "US10Y","z": us10y, "w": 0.33, "fresh": True, "staleSec": 0})
+        if spy is not None:  drivers.append({"id": "SPY",  "z": spy,   "w": 0.33, "fresh": True, "staleSec": 0})
+
+        if not drivers:
+            return {"score": 0, "drivers":[
+                {"id":"DXY","z":0,"w":0.34,"fresh":False},
+                {"id":"US10Y","z":0,"w":0.33,"fresh":False},
+                {"id":"SPY","z":0,"w":0.33,"fresh":False},
+            ]}
+        return {"score": _score_from(drivers), "drivers": drivers}
+
+    # cache the whole payload as well (2 minutes)
+    return await _cached("nowcast", 120, build)
+
+@app.get("/v1/xau/series5m")
+async def xau_series5m():
+    data = await _cached("series:XAU5", 60, td_series_xau_5m)
+    return data or {"status": "error", "message": "XAU series unavailable"}
 
 @app.post("/v1/journal", status_code=201)
 def post_journal(entry: JournalIn):

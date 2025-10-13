@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace = "com.example.sniperflow"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.sniperflow"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -71,8 +71,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.auth)
-    // Encrypted storage
-    implementation(libs.androidx.security.crypto)
+    // Encrypted storage (removed: using no encrypted prefs currently)
     // Coroutines Task await for Play Services/Firebase
     implementation(libs.kotlinx.coroutines.play.services)
     // Views and core libs

@@ -2,7 +2,6 @@ package com.example.sniperflow.ui.journal
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.lifecycle.lifecycleScope
 import com.example.sniperflow.R
 import com.example.sniperflow.App
@@ -25,6 +24,24 @@ class JournalActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.fabAddJournal)?.setOnClickListener {
             NewJournalSheet().show(supportFragmentManager, "newJournal")
         }
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_journal, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        if (item.itemId == R.id.action_export_csv) {
+            lifecycleScope.launch {
+                val dao = (application as App).db.journalDao()
+                val rows = dao.listAll()
+                val file = CsvExporter.export(this@JournalActivity, rows)
+                android.widget.Toast.makeText(this@JournalActivity, "Exported to ${file.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            return true
+        }
+        return super.onOptionsItemSelected(item)
     }
 }
 

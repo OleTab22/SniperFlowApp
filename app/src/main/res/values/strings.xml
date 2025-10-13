@@ -30,4 +30,17 @@
     <string name="retry">Retry</string>
     <string name="empty_title">Nothing here yet</string>
     <string name="empty_subtitle">Create your first item to get started.</string>
+    <!-- Explain copy for metrics -->
+    <string name="explain_nowcast_title">What is Nowcast?</string>
+    <string name="explain_nowcast_body">A quick probability gauge for short‑term up vs down. 50% = neutral; 70%+ means stronger tilt. Built from drivers like the dollar (DXY), real yields, VIX, and momentum.</string>
+    <string name="explain_activity_title">What is Activity?</string>
+    <string name="explain_activity_body">How lively the market is right now (0–1). Higher values mean bigger and faster moves. Useful for judging if entries can reach targets.</string>
+    <string name="explain_range_title">What is Range × ATR20?</string>
+    <string name="explain_range_body">Today’s price range versus a typical day (ATR20). 1.0× is normal; 2.0× means price already moved about twice a usual day, so expect slower continuation and more mean‑reversion risk.</string>
+    <string name="explain_volume_title">What is Volume Percentile?</string>
+    <string name="explain_volume_body">How busy today is compared to recent days at the same time (0–100). 80 means busier than 80% of days at this clock time.</string>
+    <string name="explain_gap_title">What is Gap %?</string>
+    <string name="explain_gap_body">Percent change from today’s open to now. Large positive/negative gaps can fade or extend depending on context; use with session levels and activity.</string>
+    <string name="explain_confluence_title">What is Confluence?</string>
+    <string name="explain_confluence_body">One score summarizing multiple signals (DO context, momentum, macro drivers). Higher = more factors align. Use it to confirm bias—not as a signal on its own.</string>
 </resources>

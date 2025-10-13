@@ -34,7 +34,7 @@ import android.graphics.drawable.GradientDrawable
 import android.widget.Toast
 import okhttp3.OkHttpClient
 import com.example.sniperflow.network.PriceWsClient
-import com.example.sniperflow.R
+// R already in this package via import; redundant qualifier warnings will be fixed below
 import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class MainActivity : AppCompatActivity() {
@@ -76,6 +76,10 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.alertsBtn)?.setOnClickListener { v ->
             Snackbar.make(v, "Alerts coming soon", Snackbar.LENGTH_SHORT).show()
+        }
+        // Alerts switch (read-only hook for now)
+        findViewById<android.widget.Switch>(R.id.alertsSwitch)?.setOnCheckedChangeListener { _, on ->
+            Toast.makeText(this, if (on) "Alerts ON" else "Alerts OFF", Toast.LENGTH_SHORT).show()
         }
         findViewById<View>(R.id.fabAdd)?.setOnClickListener { v ->
             // Quick Journal dialog
@@ -119,6 +123,19 @@ class MainActivity : AppCompatActivity() {
         // Show cached UI immediately, then refresh
         loadHomeCache()?.let { showFromCache(it) }
         fetchAndRender()
+        // Long-press copy level values
+        fun enableCopy(tv: TextView) {
+            tv.setOnLongClickListener {
+                val txt = tv.text?.toString() ?: return@setOnLongClickListener false
+                try {
+                    val cm = getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("price", txt))
+                    Toast.makeText(this, "Copied: ${txt}", Toast.LENGTH_SHORT).show()
+                    true
+                } catch (_: Throwable) { false }
+            }
+        }
+        listOfNotNull(findViewById<TextView>(R.id.doVal), findViewById<TextView>(R.id.pdhVal), findViewById<TextView>(R.id.pdlVal)).forEach { enableCopy(it) }
         // Bottom navigation
         findViewById<BottomNavigationView>(R.id.bottomNav)?.setOnItemSelectedListener { item ->
             when (item.itemId) {
@@ -147,7 +164,7 @@ class MainActivity : AppCompatActivity() {
         }
 
 
-        // Manual refresh with cooldown
+        // Manual refresh with cooldown + haptic
         findViewById<MaterialButton>(R.id.refreshBtn)?.setOnClickListener { v ->
             val cooldownMs = SettingsRepository(this).load().second
             val tag = v.getTag(R.id.refreshBtn) as? Long ?: 0L
@@ -156,6 +173,8 @@ class MainActivity : AppCompatActivity() {
                 Snackbar.make(v, "Please wait…", Snackbar.LENGTH_SHORT).show()
             } else {
                 v.setTag(R.id.refreshBtn, now)
+                // light haptic feedback
+                try { v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) } catch (_: Throwable) {}
                 fetchAndRender()
             }
         }
@@ -185,12 +204,14 @@ class MainActivity : AppCompatActivity() {
                 onTick = { ts, bid, ask ->
                     // Update connection dot and maybe compute quality (latency/spread) later
                     setConnStatusGreen()
+                    // Update status label to WS
+                    findViewById<TextView>(R.id.statusLabel)?.text = "WS"
                 },
                 onState = { st ->
                     when (st) {
                         PriceWsClient.State.CONNECTING -> setConnStatusAmber()
-                        PriceWsClient.State.OPEN -> setConnStatusGreen()
-                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> setConnStatusRed()
+                        PriceWsClient.State.OPEN -> { setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = "WS" }
+                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> { setConnStatusRed(); findViewById<TextView>(R.id.statusLabel)?.text = "Offline" }
                     }
                 }
             )
@@ -206,11 +227,15 @@ class MainActivity : AppCompatActivity() {
         val priceText = findViewById<TextView>(R.id.priceText)
         val changeText = findViewById<TextView>(R.id.changeText)
         val updatedText = findViewById<TextView>(R.id.updatedText)
+        // val updatedAgoText = findViewById<TextView>(R.id.updatedAgoText) // unused
         val miniChart = findViewById<SparklineView>(R.id.miniChart)
 
         val doVal = findViewById<TextView>(R.id.doVal)
+        val doDelta = findViewById<TextView>(R.id.doDelta)
         val pdhVal = findViewById<TextView>(R.id.pdhVal)
+        val pdhDelta = findViewById<TextView>(R.id.pdhDelta)
         val pdlVal = findViewById<TextView>(R.id.pdlVal)
+        val pdlDelta = findViewById<TextView>(R.id.pdlDelta)
 
         // val dailyText = findViewById<TextView>(R.id.eventText) // deprecated usage; using specific 'pill' later
         val gapText = findViewById<TextView>(R.id.gapText)
@@ -318,6 +343,15 @@ class MainActivity : AppCompatActivity() {
                 }
                 // Connection healthy
                 setConnStatusGreen()
+                // Connection label + stale logic
+                runCatching {
+                    val updated = home.price?.updatedAt ?: 0L
+                    val staleMin = (((System.currentTimeMillis()) - updated) / 60000).toInt()
+                    val label = findViewById<TextView>(R.id.statusLabel)
+                    val cur = label?.text?.toString()?.lowercase(Locale.getDefault()) ?: ""
+                    val base = if (cur.contains("ws")) "WS" else if (cur.contains("offline")) "Offline" else "Polling"
+                    label?.text = if (staleMin >= 2) "$base • Stale ${staleMin}m" else base
+                }
 
                 // Metrics chips
                 home.metrics?.let { m ->
@@ -330,6 +364,35 @@ class MainActivity : AppCompatActivity() {
                         val confStr = nc.confidence?.let { String.format(Locale.getDefault(), "%.0f", it * 100) } ?: "-"
                         getString(R.string.nowcast_fmt, confStr, nc.windowMin ?: 60)
                     } ?: "Nowcast —"
+                    // Confluence summary (simple preview from nowcast + drivers)
+                    val confScore = ((m.nowcast?.confidence ?: 0.0) * 100).toInt().coerceIn(0, 100)
+                    val confluence = findViewById<TextView>(R.id.confluenceText)
+                    // Trend arrow based on last cached score
+                    val prefs = homePrefs()
+                    val lastScore = prefs.getInt("last_conf_score", confScore)
+                    val arrow = when {
+                        confScore - lastScore >= 5 -> "▲"
+                        lastScore - confScore >= 5 -> "▼"
+                        else -> "•"
+                    }
+                    confluence?.text = "Confluence ${confScore} ${arrow}"
+                    // Persist for next render
+                    prefs.edit { putInt("last_conf_score", confScore) }
+                    // Explain taps
+                    fun showExplain(title: String, body: String) {
+                        val dialog = android.app.AlertDialog.Builder(this@MainActivity)
+                            .setView(layoutInflater.inflate(R.layout.dialog_driver_detail, null, false))
+                            .create()
+                        dialog.show()
+                        dialog.findViewById<TextView>(R.id.tvTitle)?.text = title
+                        dialog.findViewById<TextView>(R.id.tvBody)?.text = body
+                    }
+                    gapText?.setOnClickListener { showExplain(getString(R.string.explain_gap_title), getString(R.string.explain_gap_body)) }
+                    findViewById<TextView>(R.id.rangeText)?.setOnClickListener { showExplain(getString(R.string.explain_range_title), getString(R.string.explain_range_body)) }
+                    findViewById<TextView>(R.id.volumeText)?.setOnClickListener { showExplain(getString(R.string.explain_volume_title), getString(R.string.explain_volume_body)) }
+                    findViewById<TextView>(R.id.activityText)?.setOnClickListener { showExplain(getString(R.string.explain_activity_title), getString(R.string.explain_activity_body)) }
+                    findViewById<TextView>(R.id.nowcastText)?.setOnClickListener { showExplain(getString(R.string.explain_nowcast_title), getString(R.string.explain_nowcast_body)) }
+                    confluence?.setOnClickListener { showExplain(getString(R.string.explain_confluence_title), getString(R.string.explain_confluence_body)) }
                 }
 
                 // Quality chip
@@ -369,6 +432,24 @@ class MainActivity : AppCompatActivity() {
                     doVal.text = lv.doLevel?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
                     pdhVal.text = lv.pdh?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
                     pdlVal.text = lv.pdl?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
+                    // Deltas from DO
+                    val doPrice = lv.doLevel?.price
+                    fun fmtDelta(v: Double?, anchor: Double?): String? {
+                        if (v == null || anchor == null) return null
+                        val d = v - anchor
+                        return String.format(Locale.getDefault(), "Δ %+.2f", d)
+                    }
+                    doDelta?.text = ""
+                    pdhDelta?.text = fmtDelta(lv.pdh?.price, doPrice) ?: ""
+                    pdlDelta?.text = fmtDelta(lv.pdl?.price, doPrice) ?: ""
+                    // Session 50% preview from Asia range if available
+                    val asi = lv.asia
+                    val mid = if (asi?.high != null && asi.low != null) (asi.high + asi.low) / 2.0 else null
+                    val last = home.price?.last
+                    val dist = if (mid != null && last != null) kotlin.math.abs(last - mid) else null
+                    findViewById<TextView>(R.id.sessionMidText)?.text = if (mid != null && dist != null) {
+                        "Session 50% ${String.format(Locale.getDefault(), "%.2f", mid)} • Δ ${String.format(Locale.getDefault(), "%.2f", dist)}"
+                    } else "Session 50% —"
                 }
 
                 // Bias from nowcast
@@ -551,12 +632,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun vibrateOnce(durationMs: Long, amplitude: Int) {
         try {
-            val vibrator = getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, amplitude))
+            val vibrator = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                val manager = getSystemService(android.os.VibratorManager::class.java)
+                manager?.defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(durationMs)
+                getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            }
+            if (vibrator != null) {
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, amplitude))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(durationMs)
+                }
             }
         } catch (_: Throwable) { }
     }

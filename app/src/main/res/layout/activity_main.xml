@@ -41,7 +41,15 @@
                 android:layout_width="10dp"
                 android:layout_height="10dp"
                 android:layout_marginEnd="12dp"
-                android:background="#16A34A" />
+                android:background="#16A34A"
+                android:contentDescription="Connection status" />
+            <TextView
+                android:id="@+id/statusLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:text="WS"
+                android:textSize="12sp" />
             <ImageView
                 android:id="@+id/btnNotifications"
                 android:layout_width="24dp"
@@ -109,12 +117,28 @@
                     android:textSize="12sp"
                     android:layout_marginTop="6dp" />
 
+                <TextView
+                    android:id="@+id/updatedAgoText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Just now"
+                    android:textSize="12sp"
+                    android:layout_marginTop="2dp" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/refreshBtn"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="Refresh" />
+
+                <TextView
+                    android:id="@+id/cooldownLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text=""
+                    android:textSize="12sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -153,6 +177,13 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Nowcast —"
+                    android:layout_marginTop="6dp" />
+
+                <TextView
+                    android:id="@+id/confluenceText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Confluence —"
                     android:layout_marginTop="6dp" />
 
                 <LinearLayout
@@ -308,107 +339,162 @@
 
                 <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_weight="1"
-                        android:gravity="center_vertical"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:background="@drawable/bg_level_chip_do">
-                        <TextView
-                            android:id="@+id/labelDo"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:paddingLeft="10dp"
-                            android:paddingRight="10dp"
-                            android:paddingTop="4dp"
-                            android:paddingBottom="4dp"
-                            android:text="DO"
-                            android:textColor="#FFFFFF"
-                            android:textSize="12sp"
-                            android:background="@drawable/bg_level_tag_do" />
-                        <TextView
-                            android:id="@+id/doVal"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginLeft="10dp"
-                            android:text="—"
-                            android:textSize="16sp" />
-                    </LinearLayout>
-
-                    <Space
-                        android:layout_width="8dp"
-                        android:layout_height="1dp" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_weight="1"
-                        android:gravity="center_vertical"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:background="@drawable/bg_level_chip_pdh">
-                        <TextView
-                            android:id="@+id/labelPdh"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:paddingLeft="10dp"
-                            android:paddingRight="10dp"
-                            android:paddingTop="4dp"
-                            android:paddingBottom="4dp"
-                            android:text="PDH"
-                            android:textColor="#FFFFFF"
-                            android:textSize="12sp"
-                            android:background="@drawable/bg_level_tag_pdh" />
-                        <TextView
-                            android:id="@+id/pdhVal"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginLeft="10dp"
-                            android:text="—"
-                            android:textSize="16sp" />
-                    </LinearLayout>
-
-                    <Space
-                        android:layout_width="8dp"
-                        android:layout_height="1dp" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_weight="1"
-                        android:gravity="center_vertical"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:background="@drawable/bg_level_chip_pdl">
-                        <TextView
-                            android:id="@+id/labelPdl"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:paddingLeft="10dp"
-                            android:paddingRight="10dp"
-                            android:paddingTop="4dp"
-                            android:paddingBottom="4dp"
-                            android:text="PDL"
-                            android:textColor="#FFFFFF"
-                            android:textSize="12sp"
-                            android:background="@drawable/bg_level_tag_pdl" />
-                        <TextView
-                            android:id="@+id/pdlVal"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginLeft="10dp"
-                            android:text="—"
-                            android:textSize="16sp" />
-                    </LinearLayout>
-
+                    android:layout_height="40dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:background="@drawable/bg_level_chip_do">
+                    <TextView
+                        android:id="@+id/labelDo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="10dp"
+                        android:paddingRight="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="DO"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_level_tag_do" />
+                    <TextView
+                        android:id="@+id/doVal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="10dp"
+                        android:fontFamily="monospace"
+                        android:text="—"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:id="@+id/doDelta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="8dp"
+                        android:text=""
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_chip"
+                        android:paddingLeft="8dp"
+                        android:paddingRight="8dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp" />
                 </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:background="@drawable/bg_level_chip_pdh">
+                    <TextView
+                        android:id="@+id/labelPdh"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="10dp"
+                        android:paddingRight="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="PDH"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_level_tag_pdh" />
+                    <TextView
+                        android:id="@+id/pdhVal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="10dp"
+                        android:fontFamily="monospace"
+                        android:text="—"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:id="@+id/pdhDelta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="8dp"
+                        android:text=""
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_chip"
+                        android:paddingLeft="8dp"
+                        android:paddingRight="8dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:background="@drawable/bg_level_chip_pdl">
+                    <TextView
+                        android:id="@+id/labelPdl"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="10dp"
+                        android:paddingRight="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="PDL"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_level_tag_pdl" />
+                    <TextView
+                        android:id="@+id/pdlVal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="10dp"
+                        android:fontFamily="monospace"
+                        android:text="—"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:id="@+id/pdlDelta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="8dp"
+                        android:text=""
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_chip"
+                        android:paddingLeft="8dp"
+                        android:paddingRight="8dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/sessionMidText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Session 50% —"
+                    android:textSize="14sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Alerts toggle row -->
+        <LinearLayout
+            android:id="@+id/alertsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="16dp">
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/alertsSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Alerts" />
+            <TextView
+                android:id="@+id/alertsSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="Quiet hours 22:00–06:00"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <!-- Economic Event Countdown -->
         <com.google.android.material.card.MaterialCardView

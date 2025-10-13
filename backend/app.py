@@ -14,12 +14,11 @@ import lzma
 import struct
 
 NY = pytz.timezone("America/New_York")
-YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
 ALPHA_BASE = "https://www.alphavantage.co/query"
 ALPHA_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
 TWELVE_BASE = "https://api.twelvedata.com/time_series"
 TWELVE_KEY = os.getenv("TWELVEDATA_API_KEY")
-PRICE_SOURCE = os.getenv("PRICE_SOURCE", "auto").lower()  # auto|yahoo|twelvedata|dukascopy|stooq|alpha
+PRICE_SOURCE = os.getenv("PRICE_SOURCE", "auto").lower()  # auto|twelvedata|dukascopy|stooq|alpha
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 FRED_KEY = os.getenv("FRED_API_KEY")
 
@@ -77,39 +76,7 @@ def compute_levels_for_window(candles_window):
     return {"DO": first["o"], "PDH": high, "PDL": low}
 
 
-async def fetch_yahoo(symbol: str):
-    # Map app symbol to Yahoo
-    ticker = "XAUUSD=X" if symbol.upper() == "XAUUSD" else symbol
-    url = f"{YF_BASE}{ticker}"
-    params = {"interval": "1m", "range": "1d"}
-    r = await _client.get(url, params=params, timeout=15)
-    r.raise_for_status()
-    j = r.json()
-    result = j.get("chart", {}).get("result", [])
-    if not result:
-        raise RuntimeError("Yahoo: no result")
-    res = result[0]
-    ts = res.get("timestamp", [])
-    quote = res.get("indicators", {}).get("quote", [{}])[0]
-    opens = quote.get("open", [])
-    highs = quote.get("high", [])
-    lows = quote.get("low", [])
-    closes = quote.get("close", [])
-    candles = []
-    for i in range(min(len(ts), len(opens), len(highs), len(lows), len(closes))):
-        if opens[i] is None or highs[i] is None or lows[i] is None or closes[i] is None:
-            continue
-        candles.append({
-            "t": int(ts[i]) * 1000,
-            "o": float(opens[i]),
-            "h": float(highs[i]),
-            "l": float(lows[i]),
-            "c": float(closes[i]),
-        })
-    if not candles:
-        raise RuntimeError("Yahoo: empty candles")
-    last_price = candles[-1]["c"]
-    return candles, last_price
+# Yahoo provider removed to avoid 429s and unsupported scraping
 
 
 async def fetch_alpha(symbol: str):
@@ -271,8 +238,40 @@ async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
         "last": _to_f(j.get("price") or j.get("close")),
     }
 
+async def cached_twelvedata_quote(symbol: str, ttl_sec: int = 120) -> Dict[str, float]:
+    """Cache TD quote to avoid exceeding free-tier limits."""
+    key = ("td_quote", symbol.upper())
+    hit = _cache.get(key)
+    now = now_utc_ms()
+    if hit and (now - hit[0] < ttl_sec * 1000):
+        return hit[1]
+    q = await fetch_twelvedata_quote(symbol)
+    _cache[key] = (now, q)
+    return q
 
-async def fetch_dukascopy(symbol: str, hours_back: int = 30):
+async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
+    """Percent change from Twelve Data quote (cached)."""
+    if not TWELVE_KEY:
+        return None
+    key = ("td_pct", symbol.upper())
+    hit = _cache.get(key)
+    now = now_utc_ms()
+    if hit and (now - hit[0] < ttl_sec * 1000):
+        return hit[1]
+    url = "https://api.twelvedata.com/quote"
+    r = await _client.get(url, params={"symbol": symbol, "apikey": TWELVE_KEY}, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    pct_raw = str(j.get("percent_change", "0")).replace("%", "")
+    try:
+        pct = float(pct_raw)
+    except Exception:
+        pct = None
+    _cache[key] = (now, pct)
+    return pct
+
+
+async def fetch_dukascopy(symbol: str, hours_back: int = 4):
     instr = symbol.upper()
     if instr != "XAUUSD":
         raise RuntimeError("Dukascopy fallback implemented for XAUUSD only")
@@ -317,7 +316,39 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 30):
 
     # Fetch newest to oldest so we can early stop when enough data
     for h in range(hours_back):
-        await fetch_hour(now_utc - timedelta(hours=h))
+        dt_hr = now_utc - timedelta(hours=h)
+        base = "https://datafeed.dukascopy.com/datafeed"
+        yyyy = dt_hr.year
+        mm0 = dt_hr.month - 1
+        dd = dt_hr.day
+        hh = dt_hr.hour
+        url = f"{base}/{instr}/{yyyy:04d}/{mm0:02d}/{dd:02d}/{hh:02d}h_ticks.bi5"
+        # Early stop if current/next hour not available (404 or empty)
+        r = await _client.get(url, timeout=10)
+        if r.status_code != 200 or not r.content:
+            break
+        try:
+            raw = lzma.decompress(r.content)
+        except Exception:
+            break
+        # re-use parsed block via local parse to ticks
+        rec = 20
+        for i in range(0, len(raw) - (len(raw) % rec), rec):
+            try:
+                tms, ask_i, bid_i, _av_i, _bv_i = struct.unpack(">IIIII", raw[i:i+rec])
+            except Exception:
+                continue
+            ts_ms = int(dt_hr.timestamp() * 1000) + int(tms)
+            mid_i = (ask_i + bid_i) / 2.0
+            price = None
+            for s in (100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0):
+                v = mid_i / s
+                if 500.0 <= v <= 10000.0:
+                    price = v
+                    break
+            if price is None:
+                price = mid_i / 1000.0
+            ticks.append((ts_ms, float(price)))
 
     if not ticks:
         raise RuntimeError("Dukascopy: empty series")
@@ -345,9 +376,7 @@ async def get_candles(symbol: str):
     if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
         return ts_payload[1]
     # Explicit source override via env for diagnostics
-    if PRICE_SOURCE in ("yahoo", "twelvedata", "dukascopy", "stooq", "alpha"):
-        if PRICE_SOURCE == "yahoo":
-            return await fetch_yahoo(symbol)
+    if PRICE_SOURCE in ("twelvedata", "dukascopy", "stooq", "alpha"):
         if PRICE_SOURCE == "twelvedata":
             return await fetch_twelvedata(symbol)
         if PRICE_SOURCE == "dukascopy":
@@ -359,43 +388,40 @@ async def get_candles(symbol: str):
 
     # Auto strategy with sanity checks
     try:
-        payload = await fetch_yahoo(symbol)
-    except Exception as e_yahoo:
+        candles_td, last_td = await fetch_twelvedata(symbol)
+        last_sane = last_td
         try:
-            candles_td, last_td = await fetch_twelvedata(symbol)
-            last_sane = last_td
-            try:
-                q = await fetch_twelvedata_quote(symbol)
-                candidate = None
-                if q.get("bid") and q.get("ask"):
-                    candidate = (q["bid"] + q["ask"]) / 2.0
-                elif q.get("last"):
-                    candidate = q["last"]
-                if candidate is not None:
-                    c_last = candles_td[-1]["c"] if candles_td else candidate
-                    if abs(candidate - c_last) <= 5.0:
-                        last_sane = candidate
-                    else:
-                        try:
-                            payload = await fetch_dukascopy(symbol)
-                            _cache[key] = (now_utc_ms(), payload)
-                            return payload
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-            payload = (candles_td, last_sane)
-        except Exception as e_twelve:
-            try:
-                payload = await fetch_dukascopy(symbol)
-            except Exception as e_duka:
-                try:
-                    payload = await fetch_stooq(symbol)
-                except Exception as e_stooq:
+            q = await cached_twelvedata_quote(symbol)
+            candidate = None
+            if q.get("bid") and q.get("ask"):
+                candidate = (q["bid"] + q["ask"]) / 2.0
+            elif q.get("last"):
+                candidate = q["last"]
+            if candidate is not None:
+                c_last = candles_td[-1]["c"] if candles_td else candidate
+                if abs(candidate - c_last) <= 5.0:
+                    last_sane = candidate
+                else:
                     try:
-                        payload = await fetch_alpha(symbol)
-                    except Exception as e_alpha:
-                        raise RuntimeError(f"Yahoo failed: {e_yahoo}; TwelveData failed: {e_twelve}; Dukascopy failed: {e_duka}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
+                        payload = await fetch_dukascopy(symbol)
+                        _cache[key] = (now_utc_ms(), payload)
+                        return payload
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        payload = (candles_td, last_sane)
+    except Exception as e_twelve:
+        try:
+            payload = await fetch_dukascopy(symbol)
+        except Exception as e_duka:
+            try:
+                payload = await fetch_stooq(symbol)
+            except Exception as e_stooq:
+                try:
+                    payload = await fetch_alpha(symbol)
+                except Exception as e_alpha:
+                    raise RuntimeError(f"TwelveData failed: {e_twelve}; Dukascopy failed: {e_duka}; Stooq failed: {e_stooq}; Alpha failed: {e_alpha}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
@@ -584,11 +610,8 @@ def _find_sast_midnight_open(candles) -> Optional[float]:
 
 
 async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
-    try:
-        candles, last_price = await fetch_yahoo(symbol)
-        return {"candles": candles, "last": last_price}
-    except Exception:
-        return None
+    # Yahoo removed; keep signature for compatibility and return None
+    return None
 
 
 async def _fetch_intraday_yf_series_multi(symbols):
@@ -684,47 +707,8 @@ async def fetch_fred_series(series_id: str, max_points: int = 365) -> Optional[D
 
 
 async def _yf_chart_with_volume(symbol: str, interval: str, range_: str) -> Optional[Dict[str, Any]]:
-    """Fetch Yahoo chart with volume when available; returns dict with 'candles'."""
-    try:
-        url = f"{YF_BASE}{symbol}"
-        params = {"interval": interval, "range": range_}
-        r = await _client.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        result = j.get("chart", {}).get("result", [])
-        if not result:
-            return None
-        res = result[0]
-        ts = res.get("timestamp", [])
-        quote = res.get("indicators", {}).get("quote", [{}])[0]
-        opens = quote.get("open", [])
-        highs = quote.get("high", [])
-        lows = quote.get("low", [])
-        closes = quote.get("close", [])
-        vols = quote.get("volume", []) or []
-        n = min(len(ts), len(opens), len(highs), len(lows), len(closes))
-        candles = []
-        for i in range(n):
-            if opens[i] is None or highs[i] is None or lows[i] is None or closes[i] is None:
-                continue
-            c = {
-                "t": int(ts[i]) * 1000,
-                "o": float(opens[i]),
-                "h": float(highs[i]),
-                "l": float(lows[i]),
-                "c": float(closes[i]),
-            }
-            if i < len(vols) and vols[i] is not None:
-                try:
-                    c["v"] = float(vols[i])
-                except Exception:
-                    pass
-            candles.append(c)
-        if not candles:
-            return None
-        return {"candles": candles}
-    except Exception:
-        return None
+    # Removed Yahoo volume path; return None to disable dependent metrics
+    return None
 
 
 async def _volume_percentile_gcf() -> Optional[int]:
@@ -883,32 +867,34 @@ async def home():
         # SAST DO
         do_price = _find_sast_midnight_open(candles)
 
-        # Drivers via YF (best effort)
-        dxy = await _fetch_intraday_yf_series("^DXY")
-        vix = await _fetch_intraday_yf_series("^VIX")
-        tnx = await _fetch_intraday_yf_series("^TNX")
-        es = await _fetch_intraday_yf_series("ES=F")
+        # Drivers via Twelve Data percent change (cached) and FRED daily
         drivers = []
-        if dxy:
-            last_ts = dxy["candles"][-1]["t"] if dxy["candles"] else 0
-            stale = (end_ms - last_ts) > (10 * 60 * 1000)
-            drivers.append({"key": "dxyZ", "value": _z_from_tail([c["c"] for c in dxy["candles"]]), "stale": stale})
-        if tnx:
-            last_ts = tnx["candles"][-1]["t"] if tnx["candles"] else 0
-            stale = (end_ms - last_ts) > (10 * 60 * 1000)
-            drivers.append({"key": "realZ", "value": _z_from_tail([c["c"] / 10.0 for c in tnx["candles"]]), "stale": stale})
-        if vix:
-            last_ts = vix["candles"][-1]["t"] if vix["candles"] else 0
-            stale = (end_ms - last_ts) > (10 * 60 * 1000)
-            drivers.append({"key": "vixZ", "value": _z_from_tail([c["c"] for c in vix["candles"]]), "stale": stale})
-        # Risk-on driver from ES=F and VIX
-        if es and vix and es.get("candles") and vix.get("candles"):
-            last_ts = min(es["candles"][-1]["t"], vix["candles"][-1]["t"]) if es["candles"] and vix["candles"] else 0
-            stale = (end_ms - last_ts) > (10 * 60 * 1000)
-            z_es = _z_from_tail([c["c"] for c in es["candles"]])
-            z_vix = _z_from_tail([c["c"] for c in vix["candles"]])
-            z_risk = 0.60 * z_es - 0.40 * z_vix
-            drivers.append({"key": "risk_on", "value": z_risk, "stale": stale})
+        try:
+            dxy_pct = await td_quote_pct("DXY")
+            if dxy_pct is not None:
+                drivers.append({"key": "dxyZ", "value": float(dxy_pct), "stale": False})
+        except Exception:
+            pass
+        try:
+            vix_pct = await td_quote_pct("VIX")
+            if vix_pct is not None:
+                drivers.append({"key": "vixZ", "value": float(vix_pct), "stale": False})
+        except Exception:
+            pass
+        try:
+            spy_pct = await td_quote_pct("SPY")
+            if spy_pct is not None:
+                # risk-on proxy (+SPY)
+                drivers.append({"key": "risk_on", "value": float(spy_pct), "stale": False})
+        except Exception:
+            pass
+        try:
+            fred = await fetch_fred_series("DFII10", max_points=365)
+            if fred and fred.get("values"):
+                # use z-score as before, sign inverted for gold tilt
+                drivers.append({"key": "realZ", "value": float(-_z_from_tail(fred["values"], lookback=252)), "stale": False})
+        except Exception:
+            pass
 
         # Calendar next red using existing stub
         cal = await calendar_upcoming("USD", 72)
@@ -1033,7 +1019,7 @@ async def home():
         ask = None
         spread_pts = None
         try:
-            q = await fetch_twelvedata_quote("XAUUSD")
+            q = await cached_twelvedata_quote("XAUUSD")
             bid = q.get("bid")
             ask = q.get("ask")
             if bid and ask:
@@ -1383,7 +1369,7 @@ async def v1_features(symbol: str = "XAUUSD"):
         # Quality from bid/ask spread if available
         quality = "OK"
         try:
-            q = await fetch_twelvedata_quote(symbol)
+            q = await cached_twelvedata_quote(symbol)
             bid, ask = q.get("bid"), q.get("ask")
             if bid and ask:
                 spread_pts = int(round(max(0.0, float(ask) - float(bid)) * 100))
@@ -1568,7 +1554,7 @@ async def ws_ticks(ws: WebSocket):
             ask = None
             last = None
             try:
-                q = await fetch_twelvedata_quote("XAUUSD")
+                q = await cached_twelvedata_quote("XAUUSD")
                 bid = q.get("bid")
                 ask = q.get("ask")
                 last = q.get("last")

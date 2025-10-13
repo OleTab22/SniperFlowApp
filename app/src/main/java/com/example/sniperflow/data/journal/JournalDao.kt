@@ -25,6 +25,9 @@ interface JournalDao {
 
     @Query("UPDATE journal SET synced=1 WHERE id=:id")
     suspend fun markSynced(id: Int)
+
+    @Query("SELECT * FROM journal ORDER BY createdAt ASC")
+    suspend fun listAll(): List<JournalEntity>
 }
 
 
