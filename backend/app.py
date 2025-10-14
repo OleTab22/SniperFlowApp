@@ -96,6 +96,16 @@ async def levels_today_cached(symbol: str) -> Optional[dict]:
         prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
         do_price = compute_levels_for_window(today_window)["DO"]
         prev_levels = compute_levels_for_window(prev_window)
+        # If previous day range is missing (short series), fallback to Stooq for PDH/PDL
+        if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+            try:
+                candles_s, _last_s = await fetch_stooq(symbol)
+                prev_window_s = filter_candles(candles_s, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
+                prev_levels_s = compute_levels_for_window(prev_window_s)
+                if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
+                    prev_levels = prev_levels_s
+            except Exception:
+                pass
         payload = {
             "DO": do_price,
             "PDH": prev_levels["PDH"],
@@ -1446,6 +1456,16 @@ async def home():
             prev_end = anchor
             prev_window = filter_candles(candles, to_utc_ms(prev_start), to_utc_ms(prev_end))
             prev_levels = compute_levels_for_window(prev_window)
+            if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+                # Fallback to Stooq for previous day range if our series is too short
+                try:
+                    c2, _lp2 = await fetch_stooq("XAUUSD")
+                    prev_window_s = filter_candles(c2, to_utc_ms(prev_start), to_utc_ms(prev_end))
+                    prev_levels_s = compute_levels_for_window(prev_window_s)
+                    if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
+                        prev_levels = prev_levels_s
+                except Exception:
+                    pass
 
         # Simple nowcast based on driver z-scores (logistic transform)
         dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
