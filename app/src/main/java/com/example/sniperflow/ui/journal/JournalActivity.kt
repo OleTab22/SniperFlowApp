@@ -26,6 +26,14 @@ class JournalActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // If a BottomNavigationView is present in this layout in future, select nav_journal.
+        val bottomNavId = R.id.bottomNav
+        val bottomNavView = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView?>(bottomNavId)
+        bottomNavView?.selectedItemId = R.id.nav_journal
+    }
+
     override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
         menuInflater.inflate(R.menu.menu_journal, menu)
         return true

@@ -532,13 +532,24 @@ async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
         raise RuntimeError("TwelveData blocked until daily reset (quota exceeded)")
     sym = "XAU/USD" if symbol.upper() == "XAUUSD" else symbol
     url = "https://api.twelvedata.com/quote"
-    r = await _client.get(url, params={"symbol": sym, "apikey": TWELVE_KEY}, timeout=10)
+    # Serve cached quote on transient errors / rate limits
+    cache_key = ("td_quote_raw", symbol.upper())
+    try:
+        r = await _client.get(url, params={"symbol": sym, "apikey": TWELVE_KEY}, timeout=10)
+    except Exception:
+        hit = _cache_get(cache_key, ttl_ms=60_000)
+        if hit is not None:
+            return hit
+        raise
     r.raise_for_status()
     j = r.json()
     if isinstance(j, dict) and j.get("status") == "error":
         msg = j.get("message", "error")
         if "run out of API credits" in msg.lower():
             _block_td_until_reset()
+        hit = _cache_get(cache_key, ttl_ms=60_000)
+        if hit is not None:
+            return hit
         raise RuntimeError(f"TwelveData quote: {j}")
     # Some TD responses omit bid/ask and 'price' but include a 'close' field –
     # treat that as a valid last price instead of throwing.
@@ -549,11 +560,13 @@ async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
             return float(v) if v is not None else None
         except Exception:
             return None
-    return {
+    out = {
         "bid": _to_f(j.get("bid")),
         "ask": _to_f(j.get("ask")),
         "last": _to_f(j.get("price") or j.get("close")),
     }
+    _cache_put(cache_key, out)
+    return out
 
 async def cached_twelvedata_quote(symbol: str, ttl_sec: int = 120) -> Dict[str, float]:
     """Cache TD quote to avoid exceeding free-tier limits."""

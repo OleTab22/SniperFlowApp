@@ -20,7 +20,6 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
-import com.example.sniperflow.levels.LevelsActivity
 import com.example.sniperflow.network.PriceWsClient
 import com.example.sniperflow.network.RetrofitModule
 import com.example.sniperflow.notifications.NotificationsActivity
@@ -51,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private var periodicJob: Job? = null
     private var lastRefreshAt: Long = 0L
     private var wsClient: PriceWsClient? = null
+    private var lastApiOkAt: Long = 0L
 
     // Simple cache for fast first paint
     private data class HomeCache(
@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity() {
 
         // Quick actions
         findViewById<MaterialButton>(R.id.openChartBtn)?.setOnClickListener {
-            startActivity(Intent(this, LevelsActivity::class.java))
+            startActivity(Intent(this, com.example.sniperflow.chart.ChartActivity::class.java))
         }
         findViewById<MaterialButton>(R.id.alertsBtn)?.setOnClickListener { v ->
             Snackbar.make(v, "Alerts coming soon", Snackbar.LENGTH_SHORT).show()
@@ -174,31 +174,35 @@ class MainActivity : AppCompatActivity() {
         }
         listOfNotNull(findViewById<TextView>(R.id.doVal), findViewById<TextView>(R.id.pdhVal), findViewById<TextView>(R.id.pdlVal)).forEach { enableCopy(it) }
         // Bottom navigation
-        findViewById<BottomNavigationView>(R.id.bottomNav)?.setOnItemSelectedListener { item ->
+        val bottomNav = findViewById<BottomNavigationView>(R.id.bottomNav)
+        bottomNav?.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_home -> {
                     // already here
                     true
                 }
                 R.id.nav_journal -> {
-                    startActivity(Intent(this, JournalActivity::class.java))
+                    startActivity(Intent(this, JournalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
                     true
                 }
                 R.id.nav_alerts -> {
-                    startActivity(Intent(this, NotificationsActivity::class.java))
+                    startActivity(Intent(this, NotificationsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
                     true
                 }
                 R.id.nav_chart -> {
-                    startActivity(Intent(this, LevelsActivity::class.java))
+                    startActivity(Intent(this, com.example.sniperflow.chart.ChartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
                     true
                 }
                 R.id.nav_settings -> {
-                    startActivity(Intent(this, SettingsActivity::class.java))
+                    startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
                     true
                 }
                 else -> false
             }
         }
+        bottomNav?.setOnItemReselectedListener { /* no-op to avoid reloading */ }
+        // Ensure Home is marked selected on this screen
+        bottomNav?.selectedItemId = R.id.nav_home
 
 
         // Manual refresh with cooldown + haptic
@@ -247,8 +251,17 @@ class MainActivity : AppCompatActivity() {
                 onState = { st ->
                     when (st) {
                         PriceWsClient.State.CONNECTING -> setConnStatusAmber()
-                        PriceWsClient.State.OPEN -> { setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label) }
-                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> { setConnStatusRed(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.offline_label) }
+                        PriceWsClient.State.OPEN -> { setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label); lastApiOkAt = System.currentTimeMillis() }
+                        PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> {
+                            val recentOk = System.currentTimeMillis() - lastApiOkAt < 30_000L
+                            if (recentOk) {
+                                setConnStatusAmber()
+                                findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.polling_label)
+                            } else {
+                                setConnStatusRed()
+                                findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.offline_label)
+                            }
+                        }
                     }
                 }
             )
@@ -379,7 +392,7 @@ class MainActivity : AppCompatActivity() {
                     p.closes?.let { miniChart.setSeries(it) }
                 }
                 // Connection healthy
-                setConnStatusGreen()
+                setConnStatusGreen(); lastApiOkAt = System.currentTimeMillis()
                 // Connection label + stale logic
                 runCatching {
                     val updated = home.price?.updatedAt ?: 0L
@@ -466,17 +479,19 @@ class MainActivity : AppCompatActivity() {
 
                 // Levels row (values only; labels are separate views)
                 home.levels?.let { lv ->
-                    doVal.text = lv.doLevel?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
+                    var doStr = lv.doLevel?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
                     var pdhStr = lv.pdh?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
                     var pdlStr = lv.pdl?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
                     // Fallback: fetch UTC levels today if previous range missing
-                    if (pdhStr == null || pdlStr == null) {
+                    if (doStr == null || pdhStr == null || pdlStr == null) {
                         runCatching {
                             val t = RetrofitModule.api(BuildConfig.BASE_URL).levelsToday("XAUUSD")
+                            if (doStr == null) doStr = t.DO?.let { String.format(Locale.getDefault(), "%.2f", it) }
                             if (pdhStr == null) pdhStr = t.PDH?.let { String.format(Locale.getDefault(), "%.2f", it) }
                             if (pdlStr == null) pdlStr = t.PDL?.let { String.format(Locale.getDefault(), "%.2f", it) }
                         }
                     }
+                    doVal.text = doStr ?: "—"
                     pdhVal.text = pdhStr ?: "—"
                     pdlVal.text = pdlStr ?: "—"
                     // Deltas from DO
@@ -520,7 +535,7 @@ class MainActivity : AppCompatActivity() {
                         "do_ctx" to "DO context",
                         "mom" to "Momentum"
                     )
-                    var chips = (nc.drivers ?: emptyList())
+                    var chips = (nc.drivers ?: emptyList()).filter { it.key != null }
                         .distinctBy { it.key ?: "" }
                         .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
                         .take(4)
@@ -722,8 +737,16 @@ class MainActivity : AppCompatActivity() {
 
             } catch (t: Throwable) {
                 Timber.e(t, "Home fetch failed")
-                setConnStatusRed()
-                // Offline banner: show cached
+                // Prefer cached display if available; mark as polling/stale instead of hard offline
+                val cached = loadHomeCache()
+                if (cached != null) {
+                    showFromCache(cached)
+                    setConnStatusAmber()
+                    findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.polling_label)
+                } else {
+                    setConnStatusRed()
+                }
+                // Banner to indicate degraded state
                 findViewById<View>(R.id.bannerFeed)?.visibility = View.VISIBLE
                 findViewById<TextView>(R.id.tvBannerFeedText)?.text = getString(R.string.offline_cached_text)
                 findViewById<View>(R.id.livePriceCard)?.let { Snackbar.make(it, t.message ?: "Failed to load", Snackbar.LENGTH_LONG).show() }

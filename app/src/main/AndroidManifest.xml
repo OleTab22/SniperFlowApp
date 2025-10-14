@@ -39,8 +39,9 @@
             android:name="com.example.sniperflow.notifications.NotificationsActivity"
             android:exported="false"
             android:theme="@style/Theme.SniperFlow" />
+        <!-- Removed LevelsActivity; ChartActivity handles chart screen -->
         <activity
-            android:name=".levels.LevelsActivity"
+            android:name=".chart.ChartActivity"
             android:exported="false"
             android:theme="@style/Theme.SniperFlow" />
         <activity
