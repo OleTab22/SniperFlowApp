@@ -41,6 +41,10 @@ interface BrokerApi {
     @GET("v1/drivers")
     suspend fun driversV1(): Map<String, V1DriverZ>
 
+    // --- Levels (UTC today + previous UTC day) ---
+    @GET("/v1/levels/today")
+    suspend fun levelsToday(@Query("symbol") symbol: String = "XAUUSD"): V1LevelsToday
+
     // --- Journal ---
     @POST("v1/journal")
     suspend fun postJournal(@Body body: JournalReq): Map<String, Any>
@@ -84,6 +88,13 @@ data class V1DriverZ(
     val w: Double?,
     val fresh: Boolean? = null,
     val staleSec: Long? = null
+)
+
+data class V1LevelsToday(
+    val DO: Double?,
+    val PDH: Double?,
+    val PDL: Double?,
+    val ts: Long?
 )
 
 

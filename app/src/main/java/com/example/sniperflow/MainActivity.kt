@@ -467,8 +467,18 @@ class MainActivity : AppCompatActivity() {
                 // Levels row (values only; labels are separate views)
                 home.levels?.let { lv ->
                     doVal.text = lv.doLevel?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
-                    pdhVal.text = lv.pdh?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
-                    pdlVal.text = lv.pdl?.price?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—"
+                    var pdhStr = lv.pdh?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
+                    var pdlStr = lv.pdl?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
+                    // Fallback: fetch UTC levels today if previous range missing
+                    if (pdhStr == null || pdlStr == null) {
+                        runCatching {
+                            val t = RetrofitModule.api(BuildConfig.BASE_URL).levelsToday("XAUUSD")
+                            if (pdhStr == null) pdhStr = t.PDH?.let { String.format(Locale.getDefault(), "%.2f", it) }
+                            if (pdlStr == null) pdlStr = t.PDL?.let { String.format(Locale.getDefault(), "%.2f", it) }
+                        }
+                    }
+                    pdhVal.text = pdhStr ?: "—"
+                    pdlVal.text = pdlStr ?: "—"
                     // Deltas from DO
                     val doPrice = lv.doLevel?.price
                     fun fmtDelta(v: Double?, anchor: Double?): String? {

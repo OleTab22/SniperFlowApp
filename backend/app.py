@@ -831,6 +831,19 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/")
+async def root():
+    return {
+        "ok": True,
+        "service": "sniperflow-api",
+        "endpoints": [
+            "/home",
+            "/v1/health",
+            "/v1/levels/today?symbol=XAUUSD",
+        ],
+    }
+
+
 @app.get("/levels/intraday")
 async def intraday(symbol: str = "XAUUSD"):
     try:
@@ -1464,6 +1477,20 @@ async def home():
                     prev_levels_s = compute_levels_for_window(prev_window_s)
                     if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
                         prev_levels = prev_levels_s
+                except Exception:
+                    pass
+            # Final coarse fallback: compute PDH/PDL strictly from the previous UTC day window
+            if (prev_levels.get("PDH") is None or prev_levels.get("PDL") is None) and h and l and ts:
+                try:
+                    ps = to_utc_ms(prev_start)
+                    pe = to_utc_ms(prev_end)
+                    idx = [i for i, t in enumerate(ts) if t >= ps and t < pe]
+                    prev_highs = [float(h[i]) for i in idx if h[i] is not None]
+                    prev_lows = [float(l[i]) for i in idx if l[i] is not None]
+                    if prev_levels.get("PDH") is None and prev_highs:
+                        prev_levels["PDH"] = max(prev_highs)
+                    if prev_levels.get("PDL") is None and prev_lows:
+                        prev_levels["PDL"] = min(prev_lows)
                 except Exception:
                     pass
 
