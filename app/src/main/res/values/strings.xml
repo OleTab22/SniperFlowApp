@@ -62,4 +62,12 @@
     <string name="rr_realized_empty">Realized R:R —</string>
     <string name="context_detail_fmt">%1$s • %2$s • DO %3$s • PDH %4$s • PDL %5$s</string>
     <string name="setup_detail_fmt">%1$s %2$s @ %3$s</string>
+    <!-- New strings for accessibility and UI text -->
+    <string name="status_indicator">Status indicator</string>
+    <string name="has_screenshots">Has screenshots</string>
+    <string name="back">Back</string>
+    <string name="edit_journal">Edit Journal</string>
+    <string name="add_details_before_saving">Please add details before saving</string>
+    <string name="journal_saved">Journal saved</string>
+    <string name="journal_updated">Journal updated</string>
 </resources>
