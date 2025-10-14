@@ -530,7 +530,9 @@ async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
         if "run out of API credits" in msg.lower():
             _block_td_until_reset()
         raise RuntimeError(f"TwelveData quote: {j}")
-    if "bid" not in j and "ask" not in j and "price" not in j:
+    # Some TD responses omit bid/ask and 'price' but include a 'close' field –
+    # treat that as a valid last price instead of throwing.
+    if all(k not in j for k in ("bid", "ask", "price", "close")):
         raise RuntimeError(f"TwelveData quote: {j}")
     def _to_f(v):
         try:
@@ -1196,6 +1198,13 @@ async def v1_alerts(since: Optional[int] = None):
 
 @app.get("/home")
 async def home():
+    # Short-lived cache for consolidated payload to save upstream quotas
+    try:
+        hit = _cache_get(("home", "XAUUSD"), ttl_ms=15_000)
+        if hit is not None:
+            return hit
+    except Exception:
+        pass
     provider_status: Dict[str, Any] = {"candles": None, "td_pct:DXY": None, "td_pct:VIX": None, "td_pct:SPY": None, "fred:DFII10": None, "td_quote:XAUUSD": None}
     try:
         # XAU intraday (with multi-provider fallback via get_candles)
@@ -1640,6 +1649,10 @@ async def home():
             ],
         }
         payload["provider_status"] = provider_status
+        try:
+            _cache_put(("home", "XAUUSD"), payload)
+        except Exception:
+            pass
         return payload
     except Exception as e:
         logging.exception("home: fatal error")

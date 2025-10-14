@@ -503,15 +503,85 @@ class MainActivity : AppCompatActivity() {
                         "dxy" to "DXY",
                         "realZ" to "Real Yields",
                         "real10y" to "Real Yields",
+                        "real10Y" to "Real Yields",
+                        "DFII10" to "Real Yields",
                         "vixZ" to "VIX",
                         "risk_on" to "Risk-on",
                         "do_ctx" to "DO context",
                         "mom" to "Momentum"
                     )
-                    val chips = (nc.drivers ?: emptyList())
+                    var chips = (nc.drivers ?: emptyList())
                         .distinctBy { it.key ?: "" }
                         .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
                         .take(4)
+
+                    // Fallback: if home delivered no drivers (or all null), fetch /v1/nowcast once
+                    if (chips.isEmpty()) {
+                        runCatching {
+                            // Cache /v1/nowcast for 60s in SharedPreferences to save quotas
+                            val prefs = homePrefs()
+                            val key = "nowcast_cache_json"
+                            val keyTs = "nowcast_cache_ts"
+                            val cached = prefs.getString(key, null)
+                            val cachedTs = prefs.getLong(keyTs, 0L)
+                            val now = System.currentTimeMillis()
+                            val v1 = if (cached != null && now - cachedTs < 60_000L) {
+                                // parse cached
+                                val o = org.json.JSONObject(cached)
+                                val arr = o.optJSONArray("drivers")
+                                val list = mutableListOf<com.example.sniperflow.network.V1Driver>()
+                                if (arr != null) {
+                                    for (i in 0 until arr.length()) {
+                                        val it = arr.getJSONObject(i)
+                                        val idStr = it.optString("id")
+                                        list += com.example.sniperflow.network.V1Driver(
+                                            id = if (idStr.isBlank()) null else idStr,
+                                            z = it.optDouble("z"),
+                                            w = it.optDouble("w"),
+                                            fresh = it.optBoolean("fresh", true),
+                                            staleSec = if (it.has("staleSec")) it.optLong("staleSec") else null
+                                        )
+                                    }
+                                }
+                                com.example.sniperflow.network.NowcastV1Response(
+                                    score = o.optInt("score"),
+                                    drivers = list,
+                                    ts = o.optLong("ts")
+                                )
+                            } else {
+                                val resp = api.nowcastV1()
+                                // store compact cache
+                                val arr = org.json.JSONArray()
+                                resp.drivers?.forEach { d ->
+                                    val it = org.json.JSONObject()
+                                    it.put("id", d.id)
+                                    it.put("z", d.z)
+                                    it.put("w", d.w)
+                                    it.put("fresh", d.fresh)
+                                    if (d.staleSec != null) it.put("staleSec", d.staleSec)
+                                    arr.put(it)
+                                }
+                                val obj = org.json.JSONObject()
+                                obj.put("score", resp.score)
+                                obj.put("drivers", arr)
+                                obj.put("ts", resp.ts)
+                                prefs.edit { putString(key, obj.toString()); putLong(keyTs, now) }
+                                resp
+                            }
+                            val mapped = (v1.drivers ?: emptyList()).map { d ->
+                                com.example.sniperflow.network.DriverChip(
+                                    key = d.id,
+                                    value = d.z,
+                                    stale = (d.fresh == false),
+                                    contribution = d.w
+                                )
+                            }
+                            chips = mapped
+                                .distinctBy { it.key ?: "" }
+                                .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
+                                .take(4)
+                        }
+                    }
                     chips.forEach { d ->
                         val tv = TextView(this@MainActivity)
                         val v = d.value ?: 0.0
@@ -519,7 +589,7 @@ class MainActivity : AppCompatActivity() {
                         val contrib = String.format(Locale.getDefault(), " (%.0f%%)", kotlin.math.abs(contribVal * 100))
                         val sign = if (v >= 0) "+" else ""
                         val valStr = String.format(Locale.getDefault(), "%.1f", v)
-                        val label = DRIVER_LABEL[d.key] ?: (d.key ?: "")
+                        val label = DRIVER_LABEL[d.key ?: ""] ?: (d.key ?: "")
                         tv.text = getString(R.string.driver_chip_text_fmt, label, "$sign$valStr", contrib)
                         val color = if (v >= 0) R.color.colorPositive else R.color.colorNegative
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, color))

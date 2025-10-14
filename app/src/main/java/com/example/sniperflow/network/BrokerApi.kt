@@ -21,9 +21,11 @@ interface BrokerApi {
     suspend fun levelsSessions(@Query("symbol") symbol: String = "XAUUSD"): SessionsResponse
 
     @GET("market/ohlc24h")
+    @Suppress("unused")
     suspend fun ohlc24h(@Query("symbol") symbol: String = "XAUUSD"): Ohlc24hResponse
 
     @GET("calendar/upcoming")
+    @Suppress("unused")
     suspend fun upcoming(@Query("ccy") ccy: String = "USD", @Query("hours") hours: Int = 72): CalendarResponse
 
     @GET("home")
@@ -31,6 +33,10 @@ interface BrokerApi {
 
     @GET("v1/health")
     suspend fun health(): Map<String, String>
+
+    // --- Nowcast/Drivers fallbacks ---
+    @GET("v1/nowcast")
+    suspend fun nowcastV1(): NowcastV1Response
 
     // --- Journal ---
     @POST("v1/journal")
@@ -53,6 +59,21 @@ data class JournalReq(
     val doLvl: Double? = null,
     val pdh: Double? = null,
     val pdl: Double? = null,
+)
+
+// v1 nowcast minimal models (fallback for Home rendering)
+data class V1Driver(
+    val id: String?,
+    val z: Double?,
+    val w: Double?,
+    val fresh: Boolean? = null,
+    val staleSec: Long? = null
+)
+
+data class NowcastV1Response(
+    val score: Int?,
+    val drivers: List<V1Driver>?,
+    val ts: Long?
 )
 
 
