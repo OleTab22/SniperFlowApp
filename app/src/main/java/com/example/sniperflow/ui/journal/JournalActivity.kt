@@ -24,6 +24,20 @@ class JournalActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.fabAddJournal)?.setOnClickListener {
             NewJournalSheet().show(supportFragmentManager, "newJournal")
         }
+
+        // Bottom nav wiring
+        val bottom = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView?>(R.id.bottomNav)
+        bottom?.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> { finish(); true }
+                R.id.nav_journal -> true
+                R.id.nav_alerts -> { startActivity(android.content.Intent(this, com.example.sniperflow.notifications.NotificationsActivity::class.java)); true }
+                R.id.nav_chart -> { startActivity(android.content.Intent(this, com.example.sniperflow.chart.ChartActivity::class.java)); true }
+                R.id.nav_settings -> { startActivity(android.content.Intent(this, com.example.sniperflow.settings.SettingsActivity::class.java)); true }
+                else -> false
+            }
+        }
+        bottom?.selectedItemId = R.id.nav_journal
     }
 
     override fun onResume() {

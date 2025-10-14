@@ -1476,34 +1476,20 @@ async def home():
         except Exception:
             pass
         if not levels_cached:
-            nyt = ny_now()
-            anchor = session_day_anchor(nyt)
-            prev_start = anchor - timedelta(days=1)
-            prev_end = anchor
-            prev_window = filter_candles(candles, to_utc_ms(prev_start), to_utc_ms(prev_end))
+            # Strict UTC yesterday window
+            now_utc = datetime.now(timezone.utc)
+            today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            prev_midnight = today_midnight - timedelta(days=1)
+            prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
             prev_levels = compute_levels_for_window(prev_window)
             if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
-                # Fallback to Stooq for previous day range if our series is too short
+                # Fallback to Stooq using the same strict UTC yesterday bounds
                 try:
                     c2, _lp2 = await fetch_stooq("XAUUSD")
-                    prev_window_s = filter_candles(c2, to_utc_ms(prev_start), to_utc_ms(prev_end))
+                    prev_window_s = filter_candles(c2, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
                     prev_levels_s = compute_levels_for_window(prev_window_s)
                     if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
                         prev_levels = prev_levels_s
-                except Exception:
-                    pass
-            # Final coarse fallback: compute PDH/PDL strictly from the previous UTC day window
-            if (prev_levels.get("PDH") is None or prev_levels.get("PDL") is None) and h and l and ts:
-                try:
-                    ps = to_utc_ms(prev_start)
-                    pe = to_utc_ms(prev_end)
-                    idx = [i for i, t in enumerate(ts) if t >= ps and t < pe]
-                    prev_highs = [float(h[i]) for i in idx if h[i] is not None]
-                    prev_lows = [float(l[i]) for i in idx if l[i] is not None]
-                    if prev_levels.get("PDH") is None and prev_highs:
-                        prev_levels["PDH"] = max(prev_highs)
-                    if prev_levels.get("PDL") is None and prev_lows:
-                        prev_levels["PDL"] = min(prev_lows)
                 except Exception:
                     pass
 
@@ -2091,6 +2077,11 @@ async def v1_levels_today(symbol: str = "XAUUSD"):
     the previous UTC day. Computed from the current candles feed.
     """
     try:
+        # Prefer cached per-day computation with Stooq fallback so PDH/PDL are never null
+        day = await levels_today_cached(symbol)
+        if day:
+            return {"DO": day.get("DO"), "PDH": day.get("PDH"), "PDL": day.get("PDL"), "ts": now_utc_ms()}
+        # Fallback to direct compute if cache path failed
         candles, _last = await get_candles(symbol)
         now_utc = datetime.now(timezone.utc)
         today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2099,15 +2090,19 @@ async def v1_levels_today(symbol: str = "XAUUSD"):
 
         today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
         prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
-
         do_price = compute_levels_for_window(today_window)["DO"]
         prev_levels = compute_levels_for_window(prev_window)
-        return {
-            "DO": do_price,
-            "PDH": prev_levels["PDH"],
-            "PDL": prev_levels["PDL"],
-            "ts": now_utc_ms(),
-        }
+        # If still missing prev day range, try Stooq once
+        if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+            try:
+                c2, _lp2 = await fetch_stooq(symbol)
+                prev_window_s = filter_candles(c2, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
+                prev_levels_s = compute_levels_for_window(prev_window_s)
+                if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
+                    prev_levels = prev_levels_s
+            except Exception:
+                pass
+        return {"DO": do_price, "PDH": prev_levels.get("PDH"), "PDL": prev_levels.get("PDL"), "ts": now_utc_ms()}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"levels/today: {e}")
 

@@ -623,6 +623,25 @@ class MainActivity : AppCompatActivity() {
                                     .take(4)
                             }
                         }
+                    } else {
+                        // Persist drivers snapshot so re-open shows something instantly
+                        runCatching {
+                            val prefs = homePrefs()
+                            val arr = org.json.JSONArray()
+                            chips.forEach { d ->
+                                val it = org.json.JSONObject()
+                                it.put("id", d.key)
+                                it.put("z", d.value)
+                                it.put("w", d.contribution)
+                                it.put("fresh", d.stale?.not() ?: true)
+                                arr.put(it)
+                            }
+                            val obj = org.json.JSONObject()
+                            obj.put("score", ((nc.confidence ?: 0.0) * 100).toInt())
+                            obj.put("drivers", arr)
+                            obj.put("ts", System.currentTimeMillis())
+                            prefs.edit { putString("nowcast_cache_json", obj.toString()); putLong("nowcast_cache_ts", System.currentTimeMillis()) }
+                        }
                     }
                     // Show/hide container based on availability
                     if (chips.isEmpty()) {
