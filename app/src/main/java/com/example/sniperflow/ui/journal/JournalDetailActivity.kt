@@ -12,6 +12,7 @@ import com.example.sniperflow.App
 import com.example.sniperflow.R
 import com.example.sniperflow.data.journal.JournalEntity
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class JournalDetailActivity : AppCompatActivity() {
 
@@ -26,20 +27,80 @@ class JournalDetailActivity : AppCompatActivity() {
         }
     }
 
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menu.add(0, 1001, 0, "Edit")
+        menu.add(0, 1002, 1, "Delete")
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        val id = intent.getIntExtra("id", -1)
+        when (item.itemId) {
+            1001 -> { // Edit: simple edit notes dialog
+                val input = android.widget.EditText(this)
+                input.hint = "Edit notes"
+                lifecycleScope.launch {
+                    val cur = (application as App).db.journalDao().get(id)
+                    input.setText(cur?.notes ?: "")
+                }
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Edit Journal")
+                    .setView(input)
+                    .setPositiveButton("Save") { d, _ ->
+                        val text = input.text?.toString() ?: ""
+                        lifecycleScope.launch {
+                            val dao = (application as App).db.journalDao()
+                            val e = dao.get(id) ?: return@launch
+                            dao.update(e.copy(notes = text))
+                            bind(dao.get(id) ?: e)
+                        }
+                        d.dismiss()
+                    }
+                    .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
+                    .show()
+                return true
+            }
+            1002 -> { // Delete
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Delete Journal")
+                    .setMessage("Are you sure?")
+                    .setPositiveButton("Delete") { d, _ ->
+                        lifecycleScope.launch {
+                            val dao = (application as App).db.journalDao()
+                            dao.deleteById(id)
+                            finish()
+                        }
+                        d.dismiss()
+                    }
+                    .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
+                    .show()
+                return true
+            }
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
     private fun bind(e: JournalEntity) {
         findViewById<android.widget.TextView>(R.id.title).text =
-            if (e.realizedRR != null && e.realizedRR > 0) "Take Profit" else "Journal"
+            if (e.realizedRR != null && e.realizedRR > 0) getString(R.string.journal_take_profit_title) else getString(R.string.journal_title)
 
         findViewById<android.widget.TextView>(R.id.txtRRPlanned).text =
-            e.plannedRR?.let { "Planned R:R ${"%.2f".format(it)}" } ?: "Planned R:R —"
+            e.plannedRR?.let { getString(R.string.rr_planned_fmt, it) } ?: getString(R.string.rr_planned_empty)
         findViewById<android.widget.TextView>(R.id.txtRRReal).text =
-            e.realizedRR?.let { "Realized R:R ${"%.2f".format(it)}" } ?: "Realized R:R —"
+            e.realizedRR?.let { getString(R.string.rr_realized_fmt, it) } ?: getString(R.string.rr_realized_empty)
 
         findViewById<android.widget.TextView>(R.id.txtContext).text =
-            "${e.bias} • ${e.session} • DO ${fmt(e.doLvl)} • PDH ${fmt(e.pdh)} • PDL ${fmt(e.pdl)}"
+            getString(
+                R.string.context_detail_fmt,
+                e.bias,
+                e.session,
+                fmt(e.doLvl),
+                fmt(e.pdh),
+                fmt(e.pdl)
+            )
 
         findViewById<android.widget.TextView>(R.id.txtSetup).text =
-            "${e.timeframe} ${e.direction} @ ${fmt(e.entry)}"
+            getString(R.string.setup_detail_fmt, e.timeframe, e.direction, fmt(e.entry))
 
         findViewById<android.widget.TextView>(R.id.txtNotes).text = e.notes.ifBlank { "—" }
 
@@ -56,13 +117,14 @@ class JournalDetailActivity : AppCompatActivity() {
         d.setContentView(iv); iv.load(uri); iv.setOnClickListener { d.dismiss() }; d.show()
     }
 
-    private fun fmt(d: Double?) = d?.let { String.format("%,.2f", it) } ?: "—"
+    private fun fmt(d: Double?) = d?.let { String.format(Locale.getDefault(), "%,.2f", it) } ?: "—"
 }
 
 private class ShotsGallery(private val onClick: (Uri)->Unit)
     : androidx.recyclerview.widget.RecyclerView.Adapter<ShotsAdapter.VH>() {
 
     private val data = mutableListOf<Uri>()
+    @Suppress("NotifyDataSetChanged")
     fun submit(list: List<Uri>) { data.setAll(list); notifyDataSetChanged() }
     override fun getItemCount() = data.size
     override fun onCreateViewHolder(p: android.view.ViewGroup, t: Int) =

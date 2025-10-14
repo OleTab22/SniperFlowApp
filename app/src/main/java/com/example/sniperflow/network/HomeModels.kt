@@ -10,7 +10,8 @@ data class HomeResponse(
     val calendar: CalendarSection?,
     val quality: QualitySection?,
     val alerts: List<AlertItem>?,
-    val gates: GatesSection?
+    val gates: GatesSection?,
+    @Json(name = "provider_status") val providerStatus: Map<String, Any?>? = null
 )
 
 data class PricePanel(

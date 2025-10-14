@@ -10,20 +10,29 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+@Suppress("unused", "UnusedPrivateMember")
 class HomeRepository(
     private val api: BrokerApi,
-    private val io: CoroutineDispatcher = Dispatchers.IO
+    io: CoroutineDispatcher = Dispatchers.IO
 ) {
-    /** Pull /home every 2 seconds; server computes heavy metrics. */
+    /** Pull /home every 10 seconds; adapt to 30s when providers blocked. */
+    @Suppress("unused")
     val homePollFlow: Flow<HomeResponse> = flow {
+        var period = 10_000L
         while (true) {
             val resp = api.home()
             emit(resp)
-            delay(2000L)
+            val ps = resp.providerStatus
+            val candlesFailed = (ps?.get("candles") == false)
+            val tdBlocked = (ps?.keys?.any { it.startsWith("td_") } == true && ps.values.any { it == false })
+            val yfBlocked = (ps?.keys?.any { it.startsWith("yahoo") } == true && ps.values.any { it == false })
+            period = if (candlesFailed || tdBlocked || yfBlocked) 30_000L else 10_000L
+            delay(period)
         }
     }.flowOn(io).distinctUntilChanged()
 
     /** 1s ticker useful for countdowns on the client. */
+    @Suppress("unused")
     val ticker1s: Flow<Long> = flow {
         while (true) {
             emit(System.currentTimeMillis())

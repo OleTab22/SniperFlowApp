@@ -25,19 +25,23 @@ class SettingsActivity : AppCompatActivity() {
         val cooldownLayout = findViewById<TextInputLayout>(R.id.cooldownLayout)
         val epsilonInput = findViewById<TextInputEditText>(R.id.epsilonInput)
         val cooldownInput = findViewById<TextInputEditText>(R.id.cooldownInput)
+        val tzInput = findViewById<TextInputEditText>(R.id.tzInput)
         val saveBtn = findViewById<android.view.View>(R.id.saveBtn)
 
         // Optional: quick Test connection button if present (resolve by name to avoid compile-time R error)
+        @Suppress("DiscouragedApi")
         val testId = resources.getIdentifier("btnTest", "id", packageName)
         val testBtn = if (testId != 0) findViewById<Button>(testId) else null
 
         val (savedEpsilon, savedCooldown) = repository.load()
         epsilonInput.setText(savedEpsilon.toString())
         cooldownInput.setText(savedCooldown.toString())
+        tzInput.setText(repository.loadTimezone())
 
         saveBtn.setOnClickListener { view ->
             val epsilon = epsilonInput.text?.toString()?.toDoubleOrNull()
             val cooldown = cooldownInput.text?.toString()?.toLongOrNull()
+            val tzId = tzInput.text?.toString()?.trim().orEmpty().ifBlank { null }
 
             var valid = true
             if (!Validators.isEpsilonValid(epsilon)) {
@@ -55,7 +59,7 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             if (valid) {
-                repository.save(epsilon!!, cooldown!!)
+                repository.save(epsilon!!, cooldown!!, tzId)
                 Snackbar.make(view, "Saved", Snackbar.LENGTH_SHORT).show()
             }
         }

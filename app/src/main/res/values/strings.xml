@@ -54,4 +54,12 @@
     <string name="explain_gap_body">Percent change from today’s open to now. Large positive/negative gaps can fade or extend depending on context; use with session levels and activity.</string>
     <string name="explain_confluence_title">What is Confluence?</string>
     <string name="explain_confluence_body">One score summarizing multiple signals (DO context, momentum, macro drivers). Higher = more factors align. Use it to confirm bias—not as a signal on its own.</string>
+    <!-- Journal detail strings -->
+    <string name="journal_take_profit_title">Take Profit</string>
+    <string name="rr_planned_fmt">Planned R:R %1$.2f</string>
+    <string name="rr_planned_empty">Planned R:R —</string>
+    <string name="rr_realized_fmt">Realized R:R %1$.2f</string>
+    <string name="rr_realized_empty">Realized R:R —</string>
+    <string name="context_detail_fmt">%1$s • %2$s • DO %3$s • PDH %4$s • PDL %5$s</string>
+    <string name="setup_detail_fmt">%1$s %2$s @ %3$s</string>
 </resources>

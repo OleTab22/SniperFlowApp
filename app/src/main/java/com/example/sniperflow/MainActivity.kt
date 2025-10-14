@@ -44,6 +44,7 @@ import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import com.example.sniperflow.domain.metrics.UserTimezone
 
 class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
@@ -90,7 +91,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, if (on) "Alerts ON" else "Alerts OFF", Toast.LENGTH_SHORT).show()
         }
         findViewById<View>(R.id.fabAdd)?.setOnClickListener { v ->
-            // Quick Journal dialog
+            // Quick Journal dialog (persist entry locally)
             val input = android.widget.EditText(this)
             input.hint = "Journal: what happened?"
             android.app.AlertDialog.Builder(this)
@@ -99,7 +100,35 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("Save") { d, _ ->
                     val text = input.text?.toString()?.trim()
                     if (!text.isNullOrEmpty()) {
-                        Snackbar.make(v, "Saved to journal", Snackbar.LENGTH_SHORT).show()
+                        lifecycleScope.launch {
+                            try {
+                                val dao = (application as App).db.journalDao()
+                                dao.insert(
+                                    com.example.sniperflow.data.journal.JournalEntity(
+                                        userId = "anon",
+                                        timeframe = "M5",
+                                        direction = "Note",
+                                        session = "",
+                                        bias = "",
+                                        entry = null,
+                                        sl = null,
+                                        tp = null,
+                                        plannedRR = null,
+                                        doLvl = null,
+                                        pdh = null,
+                                        pdl = null,
+                                        notes = text,
+                                        tagsCsv = "quick",
+                                        shotUrisCsv = "",
+                                        synced = false
+                                    )
+                                )
+                                Snackbar.make(v, "Saved to journal", Snackbar.LENGTH_SHORT).show()
+                                com.example.sniperflow.data.journal.JournalSyncWorker.kickOnce(this@MainActivity)
+                            } catch (_: Throwable) {
+                                Snackbar.make(v, "Failed to save", Snackbar.LENGTH_LONG).show()
+                            }
+                        }
                     }
                     d.dismiss()
                 }
@@ -263,8 +292,8 @@ class MainActivity : AppCompatActivity() {
         alertsList?.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
 
         fun highlightSessionsSAST() {
-            // SAST windows: Asia 01:00–09:00, London 09:00–13:00, New York 14:30–18:00
-            val tz = TimeZone.getTimeZone("Africa/Johannesburg")
+            // Session windows relative to selected timezone (default Africa/Johannesburg)
+            val tz = UserTimezone.timeZone()
             val now = java.util.Calendar.getInstance(tz)
             val h = now.get(java.util.Calendar.HOUR_OF_DAY)
             val m = now.get(java.util.Calendar.MINUTE)
@@ -297,7 +326,7 @@ class MainActivity : AppCompatActivity() {
 
         // Session pill tap: show minutes left in SAST
         fun minutesLeft(endH: Int, endM: Int): Int {
-            val tz = TimeZone.getTimeZone("Africa/Johannesburg")
+            val tz = UserTimezone.timeZone()
             val now = java.util.Calendar.getInstance(tz)
             val end = java.util.Calendar.getInstance(tz)
             end.set(java.util.Calendar.HOUR_OF_DAY, endH)

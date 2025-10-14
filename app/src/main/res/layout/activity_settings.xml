@@ -35,6 +35,20 @@
                 android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tzLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Timezone (e.g. Africa/Johannesburg)">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/tzInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/saveBtn"
             android:layout_width="match_parent"

@@ -71,6 +71,41 @@ def _is_yf_blocked() -> bool:
 def _block_yf(minutes: int = 45):
     _cache[_yf_block_key()] = (now_utc_ms() + minutes * 60 * 1000, True)
 
+
+# ----- Day cache helpers -----
+def _next_utc_midnight_ms(buffer_min: int = 5) -> int:
+    now = datetime.now(timezone.utc)
+    nxt = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return int(nxt.timestamp() * 1000) + buffer_min * 60 * 1000
+
+async def levels_today_cached(symbol: str) -> Optional[dict]:
+    """Compute DO/PDH/PDL once per UTC day and cache until next midnight."""
+    key = ("levels_today", symbol.upper())
+    hit = _cache.get(key)
+    now = now_utc_ms()
+    if hit and now < hit[0]:
+        return hit[1]
+    try:
+        # Reuse existing computation path
+        candles, _last = await get_candles(symbol)
+        now_utc = datetime.now(timezone.utc)
+        today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        prev_midnight = today_midnight - timedelta(days=1)
+        next_midnight = today_midnight + timedelta(days=1)
+        today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
+        prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
+        do_price = compute_levels_for_window(today_window)["DO"]
+        prev_levels = compute_levels_for_window(prev_window)
+        payload = {
+            "DO": do_price,
+            "PDH": prev_levels["PDH"],
+            "PDL": prev_levels["PDL"],
+        }
+        _cache[key] = (_next_utc_midnight_ms(), payload)
+        return payload
+    except Exception:
+        return None
+
 async def _with_backoff_http(fn, tries: int = 3, base: float = 0.6):
     for i in range(tries):
         try:
@@ -689,35 +724,35 @@ async def get_candles(symbol: str):
 
     # Auto strategy with sanity checks
     try:
-        candles_td, last_td = await fetch_twelvedata(symbol)
-        last_sane = last_td
-        try:
-            q = await cached_twelvedata_quote(symbol)
-            candidate = None
-            if q.get("bid") and q.get("ask"):
-                candidate = (q["bid"] + q["ask"]) / 2.0
-            elif q.get("last"):
-                candidate = q["last"]
-            if candidate is not None:
-                c_last = candles_td[-1]["c"] if candles_td else candidate
-                if abs(candidate - c_last) <= 5.0:
-                    last_sane = candidate
-                else:
-                    try:
-                        payload = await fetch_dukascopy(symbol)
-                        _cache[key] = (now_utc_ms(), payload)
-                        return payload
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        payload = (candles_td, last_sane)
+            candles_td, last_td = await fetch_twelvedata(symbol)
+            last_sane = last_td
+            try:
+                q = await cached_twelvedata_quote(symbol)
+                candidate = None
+                if q.get("bid") and q.get("ask"):
+                    candidate = (q["bid"] + q["ask"]) / 2.0
+                elif q.get("last"):
+                    candidate = q["last"]
+                if candidate is not None:
+                    c_last = candles_td[-1]["c"] if candles_td else candidate
+                    if abs(candidate - c_last) <= 5.0:
+                        last_sane = candidate
+                    else:
+                        try:
+                            payload = await fetch_dukascopy(symbol)
+                            _cache[key] = (now_utc_ms(), payload)
+                            return payload
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            payload = (candles_td, last_sane)
     except Exception as e_twelve:
-        # Prefer Alpha first (official 5min FX intraday) to avoid long Dukascopy timeouts
+            # Prefer Alpha first (official 5min FX intraday) to avoid long Dukascopy timeouts
         try:
             payload = await fetch_alpha(symbol)
         except Exception as e_alpha:
-            # Try Yahoo 5m series as last-resort before other CSV/BI5 sources
+                # Try Yahoo 5m series as last-resort before other CSV/BI5 sources
             try:
                 ys = _yf_symbol_xau()
                 ypayload = None
@@ -936,7 +971,7 @@ def _find_sast_midnight_open(candles) -> Optional[float]:
 
 async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
     # Yahoo removed; keep signature for compatibility and return None
-    return None
+        return None
 
 
 async def _fetch_intraday_yf_series_multi(symbols):
@@ -1033,7 +1068,7 @@ async def fetch_fred_series(series_id: str, max_points: int = 365) -> Optional[D
 
 async def _yf_chart_with_volume(symbol: str, interval: str, range_: str) -> Optional[Dict[str, Any]]:
     # Removed Yahoo volume path; return None to disable dependent metrics
-    return None
+        return None
 
 
 async def _volume_percentile_gcf() -> Optional[int]:
@@ -1384,13 +1419,24 @@ async def home():
         except Exception:
             volume_percentile = None
 
-        # Session-aware PDH/PDL (previous session high/low using 17:00 ET anchor)
-        nyt = ny_now()
-        anchor = session_day_anchor(nyt)
-        prev_start = anchor - timedelta(days=1)
-        prev_end = anchor
-        prev_window = filter_candles(candles, to_utc_ms(prev_start), to_utc_ms(prev_end))
-        prev_levels = compute_levels_for_window(prev_window)
+        # Levels: prefer day cache; if unavailable and we have candles, compute
+        prev_levels = {"PDH": None, "PDL": None}
+        levels_cached = False
+        try:
+            day_levels = await levels_today_cached("XAUUSD")
+            if day_levels:
+                do_price = day_levels["DO"]
+                prev_levels = {"PDH": day_levels["PDH"], "PDL": day_levels["PDL"]}
+                levels_cached = True
+        except Exception:
+            pass
+        if not levels_cached:
+            nyt = ny_now()
+            anchor = session_day_anchor(nyt)
+            prev_start = anchor - timedelta(days=1)
+            prev_end = anchor
+            prev_window = filter_candles(candles, to_utc_ms(prev_start), to_utc_ms(prev_end))
+            prev_levels = compute_levels_for_window(prev_window)
 
         # Simple nowcast based on driver z-scores (logistic transform)
         dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
@@ -1525,6 +1571,7 @@ async def home():
         except Exception:
             current_session = None
 
+        # Compose payload (drivers caching handled separately if needed)
         payload = {
             "price": {
                 "last": last_price,
@@ -1534,6 +1581,7 @@ async def home():
                 "high24h": high_day,
                 "low24h": low_day,
                 "updatedAt": end_ms,
+                "staleSec": 0 if last_price is not None else None,
                 "closes": [c["c"] for c in intraday] if ('intraday' in locals() and intraday) else ([_ for _ in []]),
                 "bid": bid,
                 "ask": ask,
@@ -1543,6 +1591,7 @@ async def home():
                 # Previous session high/low
                 "pdh": {"price": prev_levels["PDH"]},
                 "pdl": {"price": prev_levels["PDL"]},
+                "cached": levels_cached,
             },
             "metrics": {
                 "gap_pct": ((last_price - do_price) / do_price * 100.0) if (do_price and do_price != 0) else None,

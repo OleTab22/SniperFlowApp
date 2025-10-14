@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Delete
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -28,6 +29,13 @@ interface JournalDao {
 
     @Query("SELECT * FROM journal ORDER BY createdAt ASC")
     suspend fun listAll(): List<JournalEntity>
+
+    @Delete
+    @Suppress("unused")
+    suspend fun delete(e: JournalEntity)
+
+    @Query("DELETE FROM journal WHERE id=:id")
+    suspend fun deleteById(id: Int)
 }
 
 

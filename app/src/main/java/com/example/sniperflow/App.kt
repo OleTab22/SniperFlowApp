@@ -4,6 +4,8 @@ import android.app.Application
 import com.example.sniperflow.data.db.AppDb
 import com.example.sniperflow.data.journal.JournalSyncWorker
 import androidx.room.Room
+import com.example.sniperflow.domain.metrics.UserTimezone
+import com.example.sniperflow.settings.SettingsRepository
 
 class App : Application() {
     lateinit var db: AppDb; private set
@@ -17,6 +19,8 @@ class App : Application() {
         JournalSyncWorker.schedule(this)
         // Keep backend warm while app in foreground
         com.example.sniperflow.ui.keepalive.BackendKeepAlive.init()
+        // Initialize user-selected timezone (default Africa/Johannesburg)
+        runCatching { UserTimezone.tzId = SettingsRepository(this).loadTimezone() }
     }
 }
 
