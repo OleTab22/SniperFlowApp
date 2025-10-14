@@ -80,7 +80,8 @@ def _next_utc_midnight_ms(buffer_min: int = 5) -> int:
 
 async def levels_today_cached(symbol: str) -> Optional[dict]:
     """Compute DO/PDH/PDL once per UTC day and cache until next midnight."""
-    key = ("levels_today", symbol.upper())
+    # v2: bump cache key to recompute after logic changes
+    key = ("levels_today_v2", symbol.upper())
     hit = _cache.get(key)
     now = now_utc_ms()
     if hit and now < hit[0]:
@@ -280,6 +281,21 @@ def compute_levels_for_window(candles_window):
     return {"DO": first["o"], "PDH": high, "PDL": low}
 
 
+def _compute_prev_day_levels_strict_utc(candles, max_lookback_days: int = 3) -> dict:
+    """Return PDH/PDL from the most recent prior UTC day that has bars.
+       Looks back up to max_lookback_days (weekends/holidays)."""
+    now_utc = datetime.now(timezone.utc)
+    today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    for k in range(1, max(1, max_lookback_days) + 1):
+        start = today_midnight - timedelta(days=k)
+        end = today_midnight - timedelta(days=k - 1)
+        prev_window = filter_candles(candles, to_utc_ms(start), to_utc_ms(end))
+        lv = compute_levels_for_window(prev_window)
+        if lv.get("PDH") is not None and lv.get("PDL") is not None:
+            return {"PDH": lv["PDH"], "PDL": lv["PDL"]}
+    return {"PDH": None, "PDL": None}
+
+
 # Yahoo provider removed to avoid 429s and unsupported scraping
 
 
@@ -466,7 +482,7 @@ async def fetch_stooq(symbol: str):
     return candles, last_price
 
 
-async def fetch_twelvedata(symbol: str):
+async def fetch_twelvedata(symbol: str, outputsize: str = "60"):
     if not TWELVE_KEY:
         raise RuntimeError("TwelveData key missing")
     if _is_td_blocked():
@@ -476,7 +492,7 @@ async def fetch_twelvedata(symbol: str):
     params = {
         "symbol": sym,
         "interval": "5min",
-        "outputsize": "60",  # last ~5 hours to reduce quota/bytes
+        "outputsize": outputsize,  # default last ~5 hours; override where needed
         "apikey": TWELVE_KEY,
         "timezone": "UTC",
         "format": "JSON",
@@ -749,7 +765,9 @@ async def get_candles(symbol: str):
 
     # Auto strategy with sanity checks
     try:
-            candles_td, last_td = await fetch_twelvedata(symbol)
+            # For PDH/PDL to be reliable, ensure up to ~2 days of coverage so
+            # previous UTC day is fully present even around midnight
+            candles_td, last_td = await fetch_twelvedata(symbol, outputsize="600")
             last_sane = last_td
             try:
                 q = await cached_twelvedata_quote(symbol)
@@ -1476,18 +1494,12 @@ async def home():
         except Exception:
             pass
         if not levels_cached:
-            # Strict UTC yesterday window
-            now_utc = datetime.now(timezone.utc)
-            today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-            prev_midnight = today_midnight - timedelta(days=1)
-            prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
-            prev_levels = compute_levels_for_window(prev_window)
+            # Strict previous UTC trading day with weekend/holiday tolerance
+            prev_levels = _compute_prev_day_levels_strict_utc(candles, max_lookback_days=3)
             if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
-                # Fallback to Stooq using the same strict UTC yesterday bounds
                 try:
                     c2, _lp2 = await fetch_stooq("XAUUSD")
-                    prev_window_s = filter_candles(c2, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
-                    prev_levels_s = compute_levels_for_window(prev_window_s)
+                    prev_levels_s = _compute_prev_day_levels_strict_utc(c2, max_lookback_days=3)
                     if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
                         prev_levels = prev_levels_s
                 except Exception:
@@ -2077,27 +2089,18 @@ async def v1_levels_today(symbol: str = "XAUUSD"):
     the previous UTC day. Computed from the current candles feed.
     """
     try:
-        # Prefer cached per-day computation with Stooq fallback so PDH/PDL are never null
-        day = await levels_today_cached(symbol)
-        if day:
-            return {"DO": day.get("DO"), "PDH": day.get("PDH"), "PDL": day.get("PDL"), "ts": now_utc_ms()}
-        # Fallback to direct compute if cache path failed
+        # Strict UTC yesterday with tolerance; DO from today UTC open
         candles, _last = await get_candles(symbol)
         now_utc = datetime.now(timezone.utc)
         today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        prev_midnight = today_midnight - timedelta(days=1)
         next_midnight = today_midnight + timedelta(days=1)
-
         today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
-        prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
         do_price = compute_levels_for_window(today_window)["DO"]
-        prev_levels = compute_levels_for_window(prev_window)
-        # If still missing prev day range, try Stooq once
+        prev_levels = _compute_prev_day_levels_strict_utc(candles, max_lookback_days=3)
         if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
             try:
                 c2, _lp2 = await fetch_stooq(symbol)
-                prev_window_s = filter_candles(c2, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
-                prev_levels_s = compute_levels_for_window(prev_window_s)
+                prev_levels_s = _compute_prev_day_levels_strict_utc(c2, max_lookback_days=3)
                 if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
                     prev_levels = prev_levels_s
             except Exception:

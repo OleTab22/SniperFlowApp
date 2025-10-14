@@ -113,4 +113,7 @@ dependencies {
     implementation(libs.androidx.recyclerview)
     // Lifecycle process for app foreground/background callbacks (keep-alive)
     implementation(libs.androidx.lifecycle.process)
+
+    // Modern WebView features (SafeBrowsing, Cookie APIs, etc.)
+    implementation("androidx.webkit:webkit:1.14.0")
 }

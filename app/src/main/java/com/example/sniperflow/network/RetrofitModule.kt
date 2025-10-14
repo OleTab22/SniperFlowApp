@@ -9,6 +9,8 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitModule {
     fun api(baseUrl: String): BrokerApi {
+        // Normalize base URL: Retrofit requires a trailing slash
+        val normalized = if (baseUrl.endsWith("/")) baseUrl else (baseUrl + "/")
         val client = OkHttpClient.Builder()
             .callTimeout(15, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -18,7 +20,7 @@ object RetrofitModule {
             .add(KotlinJsonAdapterFactory())
             .build()
         return Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(normalized)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .client(client)
             .build()
