@@ -232,7 +232,9 @@ class MainActivity : AppCompatActivity() {
                 // ping health every loop to keep connection dot fresh
                 runCatching {
                     val ok = RetrofitModule.api(BuildConfig.BASE_URL).health()
-                    if (ok["status"] == "ok") setConnStatusGreen() else setConnStatusAmber()
+                    val status = ok["status"]?.toString()?.lowercase(Locale.getDefault())
+                    val okFlag = (status == "ok") || (ok["ok"] == true)
+                    if (okFlag) setConnStatusGreen() else setConnStatusAmber()
                 }.onFailure { setConnStatusRed() }
                 delay(5_000)
             }
@@ -682,6 +684,8 @@ class MainActivity : AppCompatActivity() {
                         }
                         driversFlex.addView(tv)
                     }
+                    // Ensure layout updates immediately
+                    driversFlex.post { driversFlex.requestLayout(); driversFlex.invalidate() }
                 }
 
                 // Sessions overlap badge & haptics for news lock transitions

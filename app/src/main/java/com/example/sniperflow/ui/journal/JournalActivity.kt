@@ -21,9 +21,7 @@ class JournalActivity : AppCompatActivity() {
                 .commit()
         }
 
-        findViewById<android.view.View>(R.id.fabAddJournal)?.setOnClickListener {
-            NewJournalSheet().show(supportFragmentManager, "newJournal")
-        }
+        // FAB moved inside fragment; no local FAB here
 
         // Bottom nav wiring
         val bottom = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView?>(R.id.bottomNav)

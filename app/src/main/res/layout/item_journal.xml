@@ -8,13 +8,14 @@
         <LinearLayout android:orientation="horizontal" android:gravity="center_vertical"
             android:layout_width="match_parent" android:layout_height="wrap_content">
             <ImageView android:id="@+id/ivStatus" android:layout_width="12dp" android:layout_height="12dp"
-                android:src="@android:drawable/presence_online"/>
+                android:src="@android:drawable/presence_online" android:contentDescription="@string/status_indicator"/>
             <TextView android:id="@+id/tvTitle" android:textStyle="bold"
                 android:text="XAUUSD · M5" android:layout_width="0dp"
                 android:layout_weight="1" android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"/>
             <ImageView android:id="@+id/ivShots" android:layout_width="18dp" android:layout_height="18dp"
-                android:src="@android:drawable/ic_menu_camera" android:visibility="gone"/>
+                android:src="@android:drawable/ic_menu_camera" android:visibility="gone"
+                android:contentDescription="@string/has_screenshots"/>
             <TextView android:id="@+id/tvRr" android:text="R:R —"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:background="@android:color/darker_gray"
@@ -40,6 +41,13 @@
         <TextView android:id="@+id/tvSubtitle"
             android:text="MSS sweep + DO @ 2 431.20"
             android:layout_marginTop="6dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+        <TextView android:id="@+id/tvMeta"
+            android:text="12 Aug 14:23"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginTop="2dp"
             android:layout_width="match_parent" android:layout_height="wrap_content"/>
 
         <LinearLayout android:id="@+id/tagsRow" android:orientation="horizontal"

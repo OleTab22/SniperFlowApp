@@ -6,7 +6,7 @@ import psycopg2, psycopg2.extras
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sniperflow")
@@ -191,9 +191,28 @@ def migrate_once():
                 """
             )
 
+            # Expand journal schema with additional columns (idempotent)
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS direction TEXT;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS timeframe TEXT;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS entry DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS sl DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS tp DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS planned_rr DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS realized_rr DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS session TEXT;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS bias TEXT;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS do_lvl DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS pdh DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS pdl DOUBLE PRECISION;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS tags TEXT;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS client_local_id INTEGER;")
+            cur.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS client_created_at TIMESTAMPTZ;")
+
             # Indexes (safe to repeat)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar(time);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
+            # Support upsert via client_local_id
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_client_local ON journal(client_local_id) WHERE client_local_id IS NOT NULL;")
 
             # Seed minimal data only if empty
             cur.execute("SELECT 1 FROM levels WHERE date = CURRENT_DATE LIMIT 1;")
@@ -238,6 +257,21 @@ class JournalIn(BaseModel):
     user_id: str
     alert_id: str
     notes: str
+    direction: str | None = None
+    timeframe: str | None = None
+    entry: float | None = None
+    sl: float | None = None
+    tp: float | None = None
+    planned_rr: float | None = None
+    realized_rr: float | None = None
+    session: str | None = None
+    bias: str | None = None
+    doLvl: float | None = None
+    pdh: float | None = None
+    pdl: float | None = None
+    tags: list[str] | None = None
+    client_id: int | None = None
+    created_at_ms: int | None = None
 
 # ---------- ROUTES ----------
 @app.get("/v1/health")
@@ -324,9 +358,83 @@ def post_journal(entry: JournalIn):
     if not DATABASE_URL:
         raise HTTPException(503, "DB not configured")
     with connect() as c, c.cursor() as cur:
-        cur.execute("""INSERT INTO journal (user_id, alert_id, notes)
-                       VALUES (%s,%s,%s) RETURNING id""",
-                    (entry.user_id, entry.alert_id, entry.notes))
+        tags_csv = ",".join(entry.tags) if entry.tags else None
+        client_created_at = None
+        if entry.created_at_ms is not None:
+            try:
+                client_created_at = datetime.fromtimestamp(int(entry.created_at_ms) / 1000.0, tz=timezone.utc)
+            except Exception:
+                client_created_at = None
+        # Simple upsert by client_local_id when provided
+        if entry.client_id is not None:
+            cur.execute(
+                """
+                INSERT INTO journal (
+                    user_id, alert_id, notes,
+                    direction, timeframe, entry, sl, tp,
+                    planned_rr, realized_rr, session, bias,
+                    do_lvl, pdh, pdl, tags,
+                    client_local_id, client_created_at
+                ) VALUES (
+                    %s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s,%s
+                )
+                ON CONFLICT (client_local_id) DO UPDATE SET
+                    user_id=EXCLUDED.user_id,
+                    alert_id=EXCLUDED.alert_id,
+                    notes=EXCLUDED.notes,
+                    direction=EXCLUDED.direction,
+                    timeframe=EXCLUDED.timeframe,
+                    entry=EXCLUDED.entry,
+                    sl=EXCLUDED.sl,
+                    tp=EXCLUDED.tp,
+                    planned_rr=EXCLUDED.planned_rr,
+                    realized_rr=EXCLUDED.realized_rr,
+                    session=EXCLUDED.session,
+                    bias=EXCLUDED.bias,
+                    do_lvl=EXCLUDED.do_lvl,
+                    pdh=EXCLUDED.pdh,
+                    pdl=EXCLUDED.pdl,
+                    tags=EXCLUDED.tags,
+                    client_created_at=EXCLUDED.client_created_at
+                RETURNING id
+                """,
+                (
+                    entry.user_id, entry.alert_id, entry.notes,
+                    entry.direction, entry.timeframe, entry.entry, entry.sl, entry.tp,
+                    entry.planned_rr, entry.realized_rr, entry.session, entry.bias,
+                    entry.doLvl, entry.pdh, entry.pdl, tags_csv,
+                    entry.client_id, client_created_at,
+                )
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO journal (
+                    user_id, alert_id, notes,
+                    direction, timeframe, entry, sl, tp,
+                    planned_rr, realized_rr, session, bias,
+                    do_lvl, pdh, pdl, tags,
+                    client_created_at
+                ) VALUES (
+                    %s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s
+                ) RETURNING id
+                """,
+                (
+                    entry.user_id, entry.alert_id, entry.notes,
+                    entry.direction, entry.timeframe, entry.entry, entry.sl, entry.tp,
+                    entry.planned_rr, entry.realized_rr, entry.session, entry.bias,
+                    entry.doLvl, entry.pdh, entry.pdl, tags_csv,
+                    client_created_at,
+                )
+            )
         jid = cur.fetchone()[0]
         c.commit()
         return {"id": jid}
@@ -340,5 +448,51 @@ def latest_journal():
         cur.execute("SELECT * FROM journal ORDER BY timestamp DESC LIMIT 1")
         row = cur.fetchone()
         return dict(row) if row else {}
+
+@app.put("/v1/journal/{jid}")
+def put_journal(jid: int, entry: JournalIn):
+    if not DATABASE_URL:
+        raise HTTPException(503, "DB not configured")
+    with connect() as c, c.cursor() as cur:
+        tags_csv = ",".join(entry.tags) if entry.tags else None
+        client_created_at = None
+        if entry.created_at_ms is not None:
+            try:
+                client_created_at = datetime.fromtimestamp(int(entry.created_at_ms) / 1000.0, tz=timezone.utc)
+            except Exception:
+                client_created_at = None
+        cur.execute(
+            """
+            UPDATE journal SET
+                user_id=%s, alert_id=%s, notes=%s,
+                direction=%s, timeframe=%s, entry=%s, sl=%s, tp=%s,
+                planned_rr=%s, realized_rr=%s, session=%s, bias=%s,
+                do_lvl=%s, pdh=%s, pdl=%s, tags=%s,
+                client_local_id=%s, client_created_at=%s
+            WHERE id=%s RETURNING id
+            """,
+            (
+                entry.user_id, entry.alert_id, entry.notes,
+                entry.direction, entry.timeframe, entry.entry, entry.sl, entry.tp,
+                entry.planned_rr, entry.realized_rr, entry.session, entry.bias,
+                entry.doLvl, entry.pdh, entry.pdl, tags_csv,
+                entry.client_id, client_created_at,
+                jid,
+            )
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "journal not found")
+        c.commit()
+        return {"id": row[0]}
+
+@app.delete("/v1/journal/{jid}")
+def delete_journal(jid: int):
+    if not DATABASE_URL:
+        raise HTTPException(503, "DB not configured")
+    with connect() as c, c.cursor() as cur:
+        cur.execute("DELETE FROM journal WHERE id=%s", (jid,))
+        c.commit()
+        return {"ok": True}
 
 

@@ -12,7 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.sniperflow.R
 import com.example.sniperflow.data.journal.JournalEntity
 
-class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(diff) {
+class JournalListAdapter(private val onLongPress: ((JournalEntity) -> Unit)? = null) : ListAdapter<JournalEntity, JournalListAdapter.VH>(diff) {
 
     object diff : DiffUtil.ItemCallback<JournalEntity>() {
         override fun areItemsTheSame(o: JournalEntity, n: JournalEntity) = o.id == n.id
@@ -33,12 +33,14 @@ class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(dif
         private val session = v.findViewById<TextView>(R.id.chipSession)
         private val queued = v.findViewById<TextView>(R.id.chipQueued)
         private val subtitle = v.findViewById<TextView>(R.id.tvSubtitle)
+        private val meta = v.findViewById<TextView>(R.id.tvMeta)
         private val tagsRow = v.findViewById<LinearLayout>(R.id.tagsRow)
 
         fun bind(e: JournalEntity) {
             title.text = "${e.symbol} · ${e.timeframe}"
-            rr.text = e.realizedRR?.let { "R:R ${"%.2f".format(it)}" }
-                ?: e.plannedRR?.let { "R:R ${"%.2f".format(it)}" } ?: "R:R —"
+            rr.text = e.realizedRR?.let { itemView.context.getString(R.string.rr_realized_fmt, it) }
+                ?: e.plannedRR?.let { itemView.context.getString(R.string.rr_planned_fmt, it) }
+                ?: itemView.context.getString(R.string.rr_planned_empty)
             bias.text = e.bias; session.text = e.session
             queued.visibility = if (e.synced) View.GONE else View.VISIBLE
             // Show camera icon when we have screenshots
@@ -56,6 +58,9 @@ class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(dif
                 append("${e.timeframe} ${e.direction}")
                 e.entry?.let { append(" @ ${"%.2f".format(it)}") }
             }
+            // created date/time metadata
+            val fmt = java.text.SimpleDateFormat("dd MMM HH:mm", java.util.Locale.getDefault())
+            meta.text = fmt.format(java.util.Date(e.createdAt))
             tagsRow.removeAllViews()
             e.tagsCsv.split(",").filter { it.isNotBlank() }.take(5).forEach { t ->
                 val chip = TextView(itemView.context).apply {
@@ -67,6 +72,9 @@ class JournalListAdapter : ListAdapter<JournalEntity, JournalListAdapter.VH>(dif
             itemView.setOnClickListener {
                 val i = Intent(itemView.context, JournalDetailActivity::class.java)
                 i.putExtra("id", e.id); itemView.context.startActivity(i)
+            }
+            itemView.setOnLongClickListener {
+                onLongPress?.invoke(e); onLongPress != null
             }
         }
     }

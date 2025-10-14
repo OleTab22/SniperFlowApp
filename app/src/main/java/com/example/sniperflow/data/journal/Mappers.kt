@@ -17,7 +17,10 @@ fun JournalEntity.toReq(): JournalReq = JournalReq(
     bias = bias,
     doLvl = doLvl,
     pdh = pdh,
-    pdl = pdl
+    pdl = pdl,
+    realized_rr = realizedRR,
+    client_id = id.takeIf { it > 0 },
+    created_at_ms = createdAt
 )
 
 

@@ -36,28 +36,8 @@ class JournalDetailActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         val id = intent.getIntExtra("id", -1)
         when (item.itemId) {
-            1001 -> { // Edit: simple edit notes dialog
-                val input = android.widget.EditText(this)
-                input.hint = "Edit notes"
-                lifecycleScope.launch {
-                    val cur = (application as App).db.journalDao().get(id)
-                    input.setText(cur?.notes ?: "")
-                }
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Edit Journal")
-                    .setView(input)
-                    .setPositiveButton("Save") { d, _ ->
-                        val text = input.text?.toString() ?: ""
-                        lifecycleScope.launch {
-                            val dao = (application as App).db.journalDao()
-                            val e = dao.get(id) ?: return@launch
-                            dao.update(e.copy(notes = text))
-                            bind(dao.get(id) ?: e)
-                        }
-                        d.dismiss()
-                    }
-                    .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
-                    .show()
+            1001 -> { // Edit: open full sheet
+                NewJournalSheet.forEdit(id).show(supportFragmentManager, "editJournal")
                 return true
             }
             1002 -> { // Delete
@@ -78,6 +58,15 @@ class JournalDetailActivity : AppCompatActivity() {
             }
         }
         return super.onOptionsItemSelected(item)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val id = intent.getIntExtra("id", -1)
+        lifecycleScope.launch {
+            val e = (application as App).db.journalDao().get(id) ?: return@launch
+            bind(e)
+        }
     }
 
     private fun bind(e: JournalEntity) {

@@ -4,6 +4,9 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.DELETE
+import retrofit2.http.Path
 
 data class IntradayLevels(
     val asOf: Long,
@@ -15,9 +18,11 @@ data class IntradayLevels(
 
 interface BrokerApi {
     @GET("levels/intraday")
+    @Suppress("unused")
     suspend fun levels(@Query("symbol") symbol: String = "XAUUSD"): IntradayLevels
 
     @GET("levels/intraday/sessions")
+    @Suppress("unused")
     suspend fun levelsSessions(@Query("symbol") symbol: String = "XAUUSD"): SessionsResponse
 
     @GET("market/ohlc24h")
@@ -31,8 +36,8 @@ interface BrokerApi {
     @GET("home")
     suspend fun home(): HomeResponse
 
-    @GET("v1/health")
-    suspend fun health(): Map<String, String>
+    @GET("health")
+    suspend fun health(): Map<String, Any>
 
     // --- Nowcast/Drivers fallbacks ---
     @GET("v1/nowcast")
@@ -48,6 +53,14 @@ interface BrokerApi {
     // --- Journal ---
     @POST("v1/journal")
     suspend fun postJournal(@Body body: JournalReq): Map<String, Any>
+
+    @PUT("v1/journal/{id}")
+    @Suppress("unused")
+    suspend fun putJournal(@Path("id") id: Int, @Body body: JournalReq): Map<String, Any>
+
+    @DELETE("v1/journal/{id}")
+    @Suppress("unused")
+    suspend fun deleteJournal(@Path("id") id: Int): Map<String, Any>
 }
 
 data class JournalReq(
@@ -66,6 +79,9 @@ data class JournalReq(
     val doLvl: Double? = null,
     val pdh: Double? = null,
     val pdl: Double? = null,
+    val realized_rr: Double? = null,
+    val client_id: Int? = null,
+    val created_at_ms: Long? = null,
 )
 
 // v1 nowcast minimal models (fallback for Home rendering)

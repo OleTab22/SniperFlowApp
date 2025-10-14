@@ -23,7 +23,10 @@ class JournalListFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         val rv = v.findViewById<RecyclerView>(R.id.recycler)
-        adapter = JournalListAdapter()
+        adapter = JournalListAdapter { e ->
+            // Long-press to edit
+            NewJournalSheet.forEdit(e.id).show(parentFragmentManager, "editJournal")
+        }
         rv.adapter = adapter; rv.layoutManager = LinearLayoutManager(requireContext())
 
         val dao = (requireContext().applicationContext as App).db.journalDao()
@@ -39,6 +42,26 @@ class JournalListFragment : Fragment() {
         v.findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab).setOnClickListener {
             NewJournalSheet().show(parentFragmentManager, "newJournal")
         }
+
+        // Swipe to delete
+        val swipe = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(0,
+            androidx.recyclerview.widget.ItemTouchHelper.LEFT or androidx.recyclerview.widget.ItemTouchHelper.RIGHT) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean = false
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val pos = viewHolder.bindingAdapterPosition
+                val item = adapter.currentList.getOrNull(pos) ?: return
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val dao = (requireContext().applicationContext as App).db.journalDao()
+                    dao.deleteById(item.id)
+                }
+            }
+        }
+        androidx.recyclerview.widget.ItemTouchHelper(swipe).attachToRecyclerView(rv)
     }
 }
 
