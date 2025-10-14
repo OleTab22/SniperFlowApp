@@ -515,7 +515,7 @@ class MainActivity : AppCompatActivity() {
                         .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
                         .take(4)
 
-                    // Fallback: if home delivered no drivers (or all null), fetch /v1/nowcast once
+                
                     if (chips.isEmpty()) {
                         runCatching {
                             // Cache /v1/nowcast for 60s in SharedPreferences to save quotas
@@ -581,6 +581,29 @@ class MainActivity : AppCompatActivity() {
                                 .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
                                 .take(4)
                         }
+                        if (chips.isEmpty()) {
+                            runCatching {
+                                val zmap = api.driversV1() // { id -> {z,w,fresh,staleSec} }
+                                val mapped = zmap.map { (id, d) ->
+                                    com.example.sniperflow.network.DriverChip(
+                                        key = id,
+                                        value = d.z,
+                                        stale = d.fresh == false,
+                                        contribution = d.w
+                                    )
+                                }
+                                chips = mapped
+                                    .distinctBy { it.key ?: "" }
+                                    .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
+                                    .take(4)
+                            }
+                        }
+                    }
+                    // Show/hide container based on availability
+                    if (chips.isEmpty()) {
+                        driversFlex.visibility = View.GONE
+                    } else {
+                        driversFlex.visibility = View.VISIBLE
                     }
                     chips.forEach { d ->
                         val tv = TextView(this@MainActivity)

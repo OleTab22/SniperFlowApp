@@ -38,6 +38,9 @@ interface BrokerApi {
     @GET("v1/nowcast")
     suspend fun nowcastV1(): NowcastV1Response
 
+    @GET("v1/drivers")
+    suspend fun driversV1(): Map<String, V1DriverZ>
+
     // --- Journal ---
     @POST("v1/journal")
     suspend fun postJournal(@Body body: JournalReq): Map<String, Any>
@@ -74,6 +77,13 @@ data class NowcastV1Response(
     val score: Int?,
     val drivers: List<V1Driver>?,
     val ts: Long?
+)
+
+data class V1DriverZ(
+    val z: Double?,
+    val w: Double?,
+    val fresh: Boolean? = null,
+    val staleSec: Long? = null
 )
 
 
