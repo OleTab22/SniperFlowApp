@@ -109,6 +109,7 @@ class JournalDetailActivity : AppCompatActivity() {
             val e = (application as App).db.journalDao().get(id) ?: return@launch
             bind(e)
         }
+        findViewById<BottomNavigationView?>(R.id.bottomNav)?.selectedItemId = R.id.nav_journal
     }
 
     private fun bind(e: JournalEntity) {

@@ -28,6 +28,11 @@ class NotificationsActivity : AppCompatActivity() {
             selectedItemId = R.id.nav_alerts
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.selectedItemId = R.id.nav_alerts
+    }
 }
 
 

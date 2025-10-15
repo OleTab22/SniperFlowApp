@@ -27,7 +27,7 @@ class SettingsActivity : AppCompatActivity() {
         val cooldownLayout = findViewById<TextInputLayout>(R.id.cooldownLayout)
         val epsilonInput = findViewById<TextInputEditText>(R.id.epsilonInput)
         val cooldownInput = findViewById<TextInputEditText>(R.id.cooldownInput)
-        val tzInput = findViewById<TextInputEditText>(R.id.tzInput)
+        val tzInput = findViewById<android.widget.AutoCompleteTextView>(R.id.tzInput)
         val saveBtn = findViewById<android.view.View>(R.id.saveBtn)
 
         // Optional: quick Test connection button if present (resolve by name to avoid compile-time R error)
@@ -38,7 +38,11 @@ class SettingsActivity : AppCompatActivity() {
         val (savedEpsilon, savedCooldown) = repository.load()
         epsilonInput.setText(savedEpsilon.toString())
         cooldownInput.setText(savedCooldown.toString())
-        tzInput.setText(repository.loadTimezone())
+        // Populate timezone dropdown
+        val tzIds = java.util.TimeZone.getAvailableIDs().sorted()
+        val tzAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_list_item_1, tzIds)
+        tzInput.setAdapter(tzAdapter)
+        tzInput.setText(repository.loadTimezone(), false)
 
         saveBtn.setOnClickListener { view ->
             val epsilon = epsilonInput.text?.toString()?.toDoubleOrNull()
@@ -62,6 +66,8 @@ class SettingsActivity : AppCompatActivity() {
 
             if (valid) {
                 repository.save(epsilon!!, cooldown!!, tzId)
+                // Apply globally so session logic updates immediately
+                tzId?.let { com.example.sniperflow.domain.metrics.UserTimezone.tzId = it }
                 Snackbar.make(view, "Saved", Snackbar.LENGTH_SHORT).show()
             }
         }
@@ -91,6 +97,11 @@ class SettingsActivity : AppCompatActivity() {
             setOnItemReselectedListener { }
             selectedItemId = R.id.nav_settings
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.selectedItemId = R.id.nav_settings
     }
 }
 

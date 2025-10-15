@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private var lastRefreshAt: Long = 0L
     private var wsClient: PriceWsClient? = null
     private var lastApiOkAt: Long = 0L
+    private var isWsOpen: Boolean = false
 
     // Simple cache for fast first paint
     private data class HomeCache(
@@ -253,9 +254,10 @@ class MainActivity : AppCompatActivity() {
                 },
                 onState = { st ->
                     when (st) {
-                        PriceWsClient.State.CONNECTING -> setConnStatusAmber()
-                        PriceWsClient.State.OPEN -> { setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label); lastApiOkAt = System.currentTimeMillis() }
+                        PriceWsClient.State.CONNECTING -> { isWsOpen = false; setConnStatusAmber() }
+                        PriceWsClient.State.OPEN -> { isWsOpen = true; setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label); lastApiOkAt = System.currentTimeMillis() }
                         PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> {
+                            isWsOpen = false
                             val recentOk = System.currentTimeMillis() - lastApiOkAt < 30_000L
                             if (recentOk) {
                                 setConnStatusAmber()
@@ -396,15 +398,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 // Connection healthy
                 setConnStatusGreen(); lastApiOkAt = System.currentTimeMillis()
-                // Connection label + stale logic
-                runCatching {
-                    val updated = home.price?.updatedAt ?: 0L
-                    val staleMin = (((System.currentTimeMillis()) - updated) / 60000).toInt()
-                    val label = findViewById<TextView>(R.id.statusLabel)
-                    val cur = (label?.text.toString()).lowercase(Locale.getDefault())
-                    val base = if (cur.contains("ws")) getString(R.string.ws_label) else if (cur.contains("offline")) getString(R.string.offline_label) else getString(R.string.polling_label)
-                    label?.text = if (staleMin >= 2) "$base • Stale ${staleMin}m" else base
-                }
+                // Status label: prefer WS if open, else Polling; append staleness if any
+                val label = findViewById<TextView>(R.id.statusLabel)
+                val base = if (isWsOpen) getString(R.string.ws_label) else getString(R.string.polling_label)
+                val updated = home.price?.updatedAt ?: 0L
+                val staleMin = if (updated > 0) (((System.currentTimeMillis()) - updated) / 60000).toInt() else 0
+                label?.text = if (staleMin >= 2) "$base • Stale ${staleMin}m" else base
 
                 // Metrics chips
                 home.metrics?.let { m ->
@@ -520,10 +519,24 @@ class MainActivity : AppCompatActivity() {
                     } else getString(R.string.session_mid_fmt, java.lang.Double.NaN, java.lang.Double.NaN).replace("NaN", "—")
                 }
 
-                // Bias from nowcast
-                home.metrics?.nowcast?.let { nc ->
-                    val conf = (nc.confidence ?: 0.0).coerceIn(0.0, 1.0)
-                    val dir = if ((nc.direction ?: "").lowercase() == "bull") BiasRingView.Direction.BULL else BiasRingView.Direction.BEAR
+                // Bias from nowcast (with freshness guard and v1 fallback)
+                run {
+                    val primary = home.metrics?.nowcast
+                    var useDir = (primary?.direction ?: "").lowercase(Locale.getDefault())
+                    var useConf = (primary?.confidence ?: Double.NaN)
+                    val updatedAt = primary?.updatedAt ?: 0L
+                    val nowMs = System.currentTimeMillis()
+                    val isStale = (updatedAt == 0L) || (nowMs - updatedAt > 10 * 60 * 1000)
+                    if (primary == null || isStale || useConf.isNaN()) {
+                        runCatching {
+                            val v1 = api.nowcastV1()
+                            val score = (v1.score ?: 50).coerceIn(0, 100)
+                            useDir = if (score >= 50) "bull" else "bear"
+                            useConf = kotlin.math.max(score, 100 - score) / 100.0
+                        }
+                    }
+                    val conf = useConf.coerceIn(0.0, 1.0)
+                    val dir = if (useDir == "bull") BiasRingView.Direction.BULL else BiasRingView.Direction.BEAR
                     biasRing.setData(conf.toFloat(), dir)
                     biasTitle.text = getString(R.string.bias_title_fmt, if (dir == BiasRingView.Direction.BULL) "Bull" else "Bear")
                     biasConfidence.text = getString(R.string.bias_conf_fmt, String.format(Locale.getDefault(), "%.0f", conf * 100))
@@ -541,7 +554,7 @@ class MainActivity : AppCompatActivity() {
                         "do_ctx" to "DO context",
                         "mom" to "Momentum"
                     )
-                    var chips = (nc.drivers ?: emptyList()).filter { it.key != null }
+                    var chips = (primary?.drivers ?: emptyList()).filter { it.key != null }
                         .distinctBy { it.key ?: "" }
                         .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
                         .take(4)
@@ -643,7 +656,7 @@ class MainActivity : AppCompatActivity() {
                                 arr.put(it)
                             }
                             val obj = org.json.JSONObject()
-                            obj.put("score", ((nc.confidence ?: 0.0) * 100).toInt())
+                            obj.put("score", ((conf) * 100).toInt())
                             obj.put("drivers", arr)
                             obj.put("ts", System.currentTimeMillis())
                             prefs.edit { putString("nowcast_cache_json", obj.toString()); putLong("nowcast_cache_ts", System.currentTimeMillis()) }
@@ -689,7 +702,7 @@ class MainActivity : AppCompatActivity() {
                     if (driversFlex.isEmpty()) {
                         // Show a neutral placeholder so the section is visible
                         val tv = TextView(this@MainActivity)
-                        tv.text = getString(R.string.nowcast_fmt, "-", (nc.windowMin ?: 60))
+                        tv.text = getString(R.string.nowcast_fmt, "-", (primary?.windowMin ?: 60))
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.colorOnSurface))
                         tv.alpha = 0.7f
                         tv.setPadding(16, 10, 16, 10)
@@ -783,7 +796,9 @@ class MainActivity : AppCompatActivity() {
                 if (cached != null) {
                     showFromCache(cached)
                     setConnStatusAmber()
-                    findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.polling_label)
+                    // If WS is open but API failed, show WS
+                    val label = findViewById<TextView>(R.id.statusLabel)
+                    label?.text = if (isWsOpen) getString(R.string.ws_label) else getString(R.string.polling_label)
                 } else {
                     setConnStatusRed()
                 }

@@ -152,6 +152,8 @@ class ChartActivity : AppCompatActivity() {
 	override fun onResume() {
 		super.onResume()
 		webView.onResume()
+        // Ensure bottom navigation reflects current screen when brought to front
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.selectedItemId = R.id.nav_chart
 	}
 
 	override fun onDestroy() {
