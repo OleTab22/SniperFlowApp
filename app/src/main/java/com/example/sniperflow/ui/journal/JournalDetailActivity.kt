@@ -13,6 +13,8 @@ import com.example.sniperflow.R
 import com.example.sniperflow.data.journal.JournalEntity
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import android.content.Intent
 
 class JournalDetailActivity : AppCompatActivity() {
 
@@ -24,6 +26,46 @@ class JournalDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val e = (application as App).db.journalDao().get(id) ?: return@launch
             bind(e)
+        }
+
+        findViewById<android.view.View?>(R.id.fabEdit)?.setOnClickListener {
+            NewJournalSheet.forEdit(id).show(supportFragmentManager, "editJournal")
+        }
+        findViewById<android.view.View?>(R.id.fabDelete)?.setOnClickListener {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Delete Journal")
+                .setMessage("Are you sure?")
+                .setPositiveButton("Delete") { d, _ ->
+                    lifecycleScope.launch {
+                        val dao = (application as App).db.journalDao()
+                        dao.deleteById(id)
+                        // Best-effort remote delete if available
+                        runCatching {
+                            val api = com.example.sniperflow.network.RetrofitModule.api(com.example.sniperflow.BuildConfig.BASE_URL)
+                            api.deleteJournal(id)
+                        }
+                        finish()
+                    }
+                    d.dismiss()
+                }
+                .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
+                .show()
+        }
+
+        // Bottom navigation wiring
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.apply {
+            setOnItemSelectedListener { item ->
+                when (item.itemId) {
+                    R.id.nav_home -> { startActivity(Intent(this@JournalDetailActivity, com.example.sniperflow.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_journal -> { startActivity(Intent(this@JournalDetailActivity, JournalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_alerts -> { startActivity(Intent(this@JournalDetailActivity, com.example.sniperflow.notifications.NotificationsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_chart -> { startActivity(Intent(this@JournalDetailActivity, com.example.sniperflow.chart.ChartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_settings -> { startActivity(Intent(this@JournalDetailActivity, com.example.sniperflow.settings.SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    else -> false
+                }
+            }
+            setOnItemReselectedListener { }
+            selectedItemId = R.id.nav_journal
         }
     }
 

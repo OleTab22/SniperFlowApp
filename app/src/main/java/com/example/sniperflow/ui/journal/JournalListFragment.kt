@@ -58,6 +58,11 @@ class JournalListFragment : Fragment() {
                 viewLifecycleOwner.lifecycleScope.launch {
                     val dao = (requireContext().applicationContext as App).db.journalDao()
                     dao.deleteById(item.id)
+                    // best-effort server delete
+                    runCatching {
+                        val api = com.example.sniperflow.network.RetrofitModule.api(com.example.sniperflow.BuildConfig.BASE_URL)
+                        api.deleteJournal(item.id)
+                    }
                 }
             }
         }

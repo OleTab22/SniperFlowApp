@@ -11,6 +11,8 @@ import com.example.sniperflow.BuildConfig
 import com.example.sniperflow.network.RetrofitModule
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import android.content.Intent
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var repository: SettingsRepository
@@ -72,6 +74,22 @@ class SettingsActivity : AppCompatActivity() {
                     .onSuccess { Snackbar.make(v, "API OK", Snackbar.LENGTH_SHORT).show() }
                     .onFailure { Snackbar.make(v, "API unreachable", Snackbar.LENGTH_SHORT).show() }
             }
+        }
+
+        // Bottom navigation wiring
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.apply {
+            setOnItemSelectedListener { item ->
+                when (item.itemId) {
+                    R.id.nav_home -> { startActivity(Intent(this@SettingsActivity, com.example.sniperflow.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_journal -> { startActivity(Intent(this@SettingsActivity, com.example.sniperflow.ui.journal.JournalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_alerts -> { startActivity(Intent(this@SettingsActivity, com.example.sniperflow.notifications.NotificationsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_chart -> { startActivity(Intent(this@SettingsActivity, com.example.sniperflow.chart.ChartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); true }
+                    R.id.nav_settings -> true
+                    else -> false
+                }
+            }
+            setOnItemReselectedListener { }
+            selectedItemId = R.id.nav_settings
         }
     }
 }

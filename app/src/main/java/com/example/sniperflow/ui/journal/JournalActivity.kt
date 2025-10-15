@@ -13,6 +13,9 @@ class JournalActivity : AppCompatActivity() {
         setContentView(R.layout.activity_journal)
 
         findViewById<android.view.View>(R.id.btnBack)?.setOnClickListener { finish() }
+        findViewById<android.view.View>(R.id.btnAddTop)?.setOnClickListener {
+            NewJournalSheet().show(supportFragmentManager, "newJournal")
+        }
 
         // Host the existing JournalListFragment inside our container so the full UI shows
         if (savedInstanceState == null) {

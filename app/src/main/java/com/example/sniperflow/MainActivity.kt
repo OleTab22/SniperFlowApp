@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.toColorInt
+import androidx.core.view.isEmpty
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import com.example.sniperflow.network.PriceWsClient
@@ -479,33 +480,36 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Levels row (values only; labels are separate views)
+                // Levels row (use same formatting as cache path to ensure chip text renders)
                 home.levels?.let { lv ->
-                    var doStr = lv.doLevel?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
-                    var pdhStr = lv.pdh?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
-                    var pdlStr = lv.pdl?.price?.let { String.format(Locale.getDefault(), "%.2f", it) }
+                    var doNum = lv.doLevel?.price
+                    var pdhNum = lv.pdh?.price
+                    var pdlNum = lv.pdl?.price
                     // Fallback: fetch UTC levels today if previous range missing
-                    if (doStr == null || pdhStr == null || pdlStr == null) {
+                    if (doNum == null || pdhNum == null || pdlNum == null) {
                         runCatching {
                             val t = RetrofitModule.api(BuildConfig.BASE_URL).levelsToday("XAUUSD")
-                            if (doStr == null) doStr = t.DO?.let { String.format(Locale.getDefault(), "%.2f", it) }
-                            if (pdhStr == null) pdhStr = t.PDH?.let { String.format(Locale.getDefault(), "%.2f", it) }
-                            if (pdlStr == null) pdlStr = t.PDL?.let { String.format(Locale.getDefault(), "%.2f", it) }
+                            if (doNum == null) doNum = t.DO
+                            if (pdhNum == null) pdhNum = t.PDH
+                            if (pdlNum == null) pdlNum = t.PDL
                         }
                     }
-                    doVal.text = doStr ?: "—"
-                    pdhVal.text = pdhStr ?: "—"
-                    pdlVal.text = pdlStr ?: "—"
+                    doVal.text = doNum?.let { getString(R.string.do_fmt, it) }
+                        ?: getString(R.string.do_fmt, java.lang.Double.NaN).replace("NaN", "—")
+                    pdhVal.text = pdhNum?.let { getString(R.string.pdh_fmt, it) }
+                        ?: getString(R.string.pdh_fmt, java.lang.Double.NaN).replace("NaN", "—")
+                    pdlVal.text = pdlNum?.let { getString(R.string.pdl_fmt, it) }
+                        ?: getString(R.string.pdl_fmt, java.lang.Double.NaN).replace("NaN", "—")
                     // Deltas from DO
-                    val doPrice = lv.doLevel?.price
+                    val doPrice = doNum
                     fun fmtDelta(v: Double?, anchor: Double?): String? {
                         if (v == null || anchor == null) return null
                         val d = v - anchor
                         return String.format(Locale.getDefault(), "Δ %+.2f", d)
                     }
                     doDelta?.text = ""
-                    pdhDelta?.text = fmtDelta(lv.pdh?.price, doPrice) ?: ""
-                    pdlDelta?.text = fmtDelta(lv.pdl?.price, doPrice) ?: ""
+                    pdhDelta?.text = fmtDelta(pdhNum, doPrice) ?: ""
+                    pdlDelta?.text = fmtDelta(pdlNum, doPrice) ?: ""
                     // Session 50% preview from Asia range if available
                     val asi = lv.asia
                     val mid = if (asi?.high != null && asi.low != null) (asi.high + asi.low) / 2.0 else null
@@ -645,13 +649,11 @@ class MainActivity : AppCompatActivity() {
                             prefs.edit { putString("nowcast_cache_json", obj.toString()); putLong("nowcast_cache_ts", System.currentTimeMillis()) }
                         }
                     }
-                    // Show/hide container based on availability
-                    if (chips.isEmpty()) {
-                        driversFlex.visibility = View.GONE
-                    } else {
-                        driversFlex.visibility = View.VISIBLE
-                    }
+                    // Always show the container; if empty, we'll add a neutral placeholder
+                    driversFlex.visibility = View.VISIBLE
+                    Timber.i("Drivers: rendering %d chips", chips.size)
                     chips.forEach { d ->
+                        Timber.i("Driver chip %s = %.3f (w=%.2f)", d.key, (d.value ?: 0.0), (d.contribution ?: 0.0))
                         val tv = TextView(this@MainActivity)
                         val v = d.value ?: 0.0
                         val contribVal = d.contribution ?: 0.0
@@ -682,6 +684,22 @@ class MainActivity : AppCompatActivity() {
                             val staleText = if (d.stale == true) getString(R.string.stale_label) else ""
                             body?.text = getString(R.string.driver_detail_body_fmt, v, contrib, staleText)
                         }
+                        driversFlex.addView(tv)
+                    }
+                    if (driversFlex.isEmpty()) {
+                        // Show a neutral placeholder so the section is visible
+                        val tv = TextView(this@MainActivity)
+                        tv.text = getString(R.string.nowcast_fmt, "-", (nc.windowMin ?: 60))
+                        tv.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.colorOnSurface))
+                        tv.alpha = 0.7f
+                        tv.setPadding(16, 10, 16, 10)
+                        tv.background = ResourcesCompat.getDrawable(resources, R.drawable.bg_chip, theme)
+                        val lp = com.google.android.flexbox.FlexboxLayout.LayoutParams(
+                            com.google.android.flexbox.FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                            com.google.android.flexbox.FlexboxLayout.LayoutParams.WRAP_CONTENT
+                        )
+                        lp.setMargins(0, 0, 12, 12)
+                        tv.layoutParams = lp
                         driversFlex.addView(tv)
                     }
                     // Ensure layout updates immediately

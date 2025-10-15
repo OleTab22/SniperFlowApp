@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.sniperflow.App
 import com.example.sniperflow.network.RetrofitModule
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
 class JournalSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -23,6 +24,9 @@ class JournalSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         pending.forEach { e ->
             runCatching { api.postJournal(e.toReq()) }
                 .onSuccess { dao.markSynced(e.id) }
+                .onFailure { t ->
+                    Timber.e(t, "postJournal failed id=${e.id}")
+                }
         }
         return Result.success()
     }
