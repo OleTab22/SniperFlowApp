@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity() {
             }
             val asiaActive = inRange(1, 0, 9, 0)
             val londonActive = inRange(9, 0, 13, 0)
-            val nyActive = inRange(14, 30, 18, 0)
+            val nyActive = inRange(14, 30, 23, 0)
 
             fun stylePill(tv: TextView, active: Boolean) {
                 if (active) {
@@ -365,7 +365,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "London ends in ${mins}m", Toast.LENGTH_SHORT).show()
         }
         pillNY?.setOnClickListener {
-            val mins = minutesLeft(18, 0)
+            val mins = minutesLeft(23, 0)
             Toast.makeText(this, "New York ends in ${mins}m", Toast.LENGTH_SHORT).show()
         }
 
@@ -817,6 +817,11 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         countdownJob?.cancel()
         periodicJob?.cancel()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        findViewById<BottomNavigationView>(R.id.bottomNav)?.selectedItemId = R.id.nav_home
     }
 
     private fun showFromCache(c: HomeCache) {
