@@ -212,7 +212,11 @@ def migrate_once():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar(time);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
             # Support upsert via (user_id, client_local_id) to avoid cross-user collisions
-            cur.execute("ALTER TABLE journal ADD CONSTRAINT IF NOT EXISTS uq_journal_user_client UNIQUE (user_id, client_local_id);")
+            # Create a unique index first (version-safe), then attach it as a constraint if missing
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS journal_user_client_idx ON journal(user_id, client_local_id);")
+            cur.execute("SELECT 1 FROM pg_constraint WHERE conname = 'uq_journal_user_client'")
+            if cur.fetchone() is None:
+                cur.execute("ALTER TABLE journal ADD CONSTRAINT uq_journal_user_client UNIQUE USING INDEX journal_user_client_idx;")
             # Older deployments may have a partial unique index on client_local_id; harmless to keep for lookups
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_client_local ON journal(client_local_id) WHERE client_local_id IS NOT NULL;")
 
