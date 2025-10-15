@@ -212,6 +212,10 @@ def migrate_once():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar(time);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
             # Support upsert via client_local_id
+            # Use a proper UNIQUE constraint so Postgres can match ON CONFLICT reliably.
+            # (Partial unique indexes are not considered by ON CONFLICT without inference conditions.)
+            cur.execute("ALTER TABLE journal ADD CONSTRAINT IF NOT EXISTS uq_journal_client_local UNIQUE (client_local_id);")
+            # Older deployments may still have a partial unique index; harmless to keep, but safe to (re)create if missing
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_client_local ON journal(client_local_id) WHERE client_local_id IS NOT NULL;")
 
             # Seed minimal data only if empty
