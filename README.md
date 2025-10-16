@@ -115,7 +115,7 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r backend/requirements.txt
 export TWELVEDATA_API_KEY=your_key
 export FRED_API_KEY=your_key
-uvicorn backend.app:app --port 8787
+uvicorn backend.main:app --port 8787
 ```
 
 With the Android emulator, `http://10.0.2.2:8787/` will map to the host.

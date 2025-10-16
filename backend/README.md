@@ -19,7 +19,7 @@ pip install -r backend/requirements.txt
 export ALPHAVANTAGE_API_KEY=your_key   # optional fallback
 export TWELVEDATA_API_KEY=your_key
 export FRED_API_KEY=your_key
-uvicorn backend.app:app --port 8787
+uvicorn backend.main:app --port 8787
 ```
 
 Android is configured to call `http://10.0.2.2:8787/` inside the emulator.

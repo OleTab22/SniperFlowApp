@@ -2018,7 +2018,7 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
     return out
 
 
-@app.get("/v1/drivers")
+@router.get("/v1/drivers")
 async def v1_drivers():
     """
     Macro drivers used by the client: DXY (−), real10y (−), VIX (+).
@@ -2036,7 +2036,7 @@ async def v1_drivers():
         raise HTTPException(status_code=502, detail=f"drivers: {e}")
 
 
-@app.get("/v1/nowcast")
+@router.get("/v1/nowcast")
 async def v1_nowcast():
     """
     Simple nowcast score in [-100, 100], based on drivers with signs:
@@ -2082,7 +2082,7 @@ async def v1_nowcast():
         raise HTTPException(status_code=502, detail=f"nowcast: {e}")
 
 
-@app.get("/v1/features")
+@router.get("/v1/features")
 async def v1_features(symbol: str = "XAUUSD"):
     """
     Feature panel for the app: gap %, ATR20x proxy, activity, volume percentile,
@@ -2196,7 +2196,7 @@ async def v1_features(symbol: str = "XAUUSD"):
         raise HTTPException(status_code=502, detail=f"features: {e}")
 
 
-@app.get("/v1/price/tick")
+@router.get("/v1/price/tick")
 async def v1_price_tick(symbol: str = "XAUUSD"):
     """
     Lightweight tick endpoint: returns bid/ask if available (TwelveData quote),
@@ -2268,7 +2268,7 @@ async def v1_price_tick(symbol: str = "XAUUSD"):
         raise HTTPException(status_code=502, detail=f"price/tick: {e}")
 
 
-@app.get("/v1/ohlc")
+@router.get("/v1/ohlc")
 async def v1_ohlc(symbol: str = "XAUUSD", tf: str = "1m", limit: int = 1000):
     """
     Normalized OHLC fetcher. For now, uses get_candles() and slices the tail.
@@ -2295,7 +2295,7 @@ async def v1_ohlc(symbol: str = "XAUUSD", tf: str = "1m", limit: int = 1000):
         raise HTTPException(status_code=502, detail=f"ohlc: {e}")
 
 
-@app.get("/v1/levels/today")
+@router.get("/v1/levels/today")
 async def v1_levels_today(symbol: str = "XAUUSD"):
     """
     UTC-based levels for today: DO (open at 00:00 UTC), and PDH/PDL from
@@ -2331,7 +2331,7 @@ async def v1_levels_today(symbol: str = "XAUUSD"):
         raise HTTPException(status_code=502, detail=f"levels/today: {e}")
 
 
-@app.get("/v1/calendar/upcoming")
+@router.get("/v1/calendar/upcoming")
 async def v1_calendar_upcoming(window: str = "8h", ccy: str = "USD"):
     """
     Windowed upcoming calendar wrapper. Accepts window like "8h" or "24h",
@@ -2355,7 +2355,7 @@ async def v1_calendar_upcoming(window: str = "8h", ccy: str = "USD"):
  # ---------------- WebSocket for Ticks (best-effort) ----------------
 from fastapi import WebSocket, WebSocketDisconnect
 
-@app.websocket("/ticks")
+@router.websocket("/ticks")
 async def ws_ticks(ws: WebSocket):
     await ws.accept()
     try:
