@@ -1570,6 +1570,21 @@ async def home():
                     ap = await fetch_alpha_global_quote_pct("SPY")
                     if ap is not None:
                         drivers.append({"key": "risk_on", "value": float(ap), "stale": False})
+                        provider_status["alpha:pct:SPY"] = True
+                        spy_added = True
+                    else:
+                        provider_status["alpha:pct:SPY"] = False
+                if not spy_added:
+                    try:
+                        fp = await fetch_fred_pct("BAMLH0A0HYM2")
+                        if fp is not None:
+                            drivers.append({"key": "risk_on", "value": float(-fp), "stale": True}) # FRED is daily, so mark as stale
+                            provider_status["fred:pct:BAMLH0A0HYM2"] = True
+                            spy_added = True
+                        else:
+                            provider_status["fred:pct:BAMLH0A0HYM2"] = False
+                    except Exception:
+                        provider_status["fred:pct:BAMLH0A0HYM2"] = False
         except Exception:
             logging.exception("home: spy pct failed")
             provider_status["td_pct:SPY"] = False
@@ -1584,14 +1599,55 @@ async def home():
                     provider_status["yahoo:series:SPY"] = False
             except Exception:
                 provider_status["yahoo:series:SPY"] = False
+            if not spy_added:
+                try:
+                    ap = await fetch_alpha_global_quote_pct("SPY")
+                    if ap is not None:
+                        drivers.append({"key": "risk_on", "value": float(ap), "stale": False})
+                        provider_status["alpha:pct:SPY"] = True
+                        spy_added = True
+                    else:
+                        provider_status["alpha:pct:SPY"] = False
+                except Exception:
+                    provider_status["alpha:pct:SPY"] = False
+            if not spy_added:
+                try:
+                    fp = await fetch_fred_pct("BAMLH0A0HYM2")
+                    if fp is not None:
+                        drivers.append({"key": "risk_on", "value": float(-fp), "stale": True})
+                        provider_status["fred:pct:BAMLH0A0HYM2"] = True
+                    else:
+                        provider_status["fred:pct:BAMLH0A0HYM2"] = False
+                except Exception:
+                    provider_status["fred:pct:BAMLH0A0HYM2"] = False
         try:
+            real_yield_values = None
             fred = await fetch_fred_series("DFII10", max_points=365)
             if fred and fred.get("values"):
+                real_yield_values = fred["values"]
+                provider_status["fred:DFII10"] = True
+            else:
+                # Fallback: calculate from nominal and inflation expectation
+                try:
+                    nominal_series = await fetch_fred_series("DGS10", max_points=365)
+                    inflation_series = await fetch_fred_series("T10YIE", max_points=365)
+                    if nominal_series and inflation_series and nominal_series.get("values") and inflation_series.get("values"):
+                        # Align and subtract; simple approach assumes lists are roughly aligned
+                        nom = nominal_series["values"]
+                        inf = inflation_series["values"]
+                        min_len = min(len(nom), len(inf))
+                        real_yield_values = [(n - i) for n, i in zip(nom[-min_len:], inf[-min_len:])]
+                        provider_status["fred:DGS10-T10YIE"] = True
+                except Exception:
+                    provider_status["fred:DGS10-T10YIE"] = False
+
+            if real_yield_values:
                 # real yields (invert sign for gold tilt)
-                drivers.append({"key": "realZ", "value": float(-_z_from_tail(fred["values"], lookback=252)), "stale": False})
-            provider_status["fred:DFII10"] = True
+                drivers.append({"key": "realZ", "value": float(-_z_from_tail(real_yield_values, lookback=252)), "stale": False})
+            else:
+                 provider_status["fred:DFII10"] = False
         except Exception:
-            logging.exception("home: fred DFII10 failed")
+            logging.exception("home: real yields failed")
             provider_status["fred:DFII10"] = False
         # Add nominal 10y as an extra driver (invert sign for gold tilt)
         try:
