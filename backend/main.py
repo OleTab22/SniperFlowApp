@@ -134,10 +134,17 @@ except Exception:
         from app import app as _data_app
         data_app = _data_app
     except Exception:
-        data_app = None
+        try:
+            # Absolute package path if import system resolves 'backend'
+            from backend.app import app as _data_app
+            data_app = _data_app
+        except Exception as e:
+            log.warning("Router include failed: %s", e)
+            data_app = None
 
 if data_app is not None:
     app.include_router(data_app.router)
+    log.info("Mounted data app router; total routes: %d", len(app.routes))
 
 # Lightweight health path for clients expecting /health
 @app.get("/health")
