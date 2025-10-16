@@ -1,4 +1,8 @@
-@app.get("/v1/fred/latest")
+from fastapi import APIRouter, HTTPException
+
+router = APIRouter()
+
+@router.get("/v1/fred/latest")
 async def v1_fred_latest(series: str = "DFII10"):
     """Return latest value for a FRED series (e.g., DFII10, DGS10)."""
     try:
@@ -10,8 +14,6 @@ async def v1_fred_latest(series: str = "DFII10"):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"fred/latest: {e}")
-
-from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import time
@@ -38,14 +40,6 @@ FRED_KEY = os.getenv("FRED_API_KEY")
 GOLDAPI_BASE = "https://www.goldapi.io/api"
 GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
 
-app = FastAPI()
-# Allow mobile clients to call the API (adjust origins if you want to restrict)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
 
