@@ -130,15 +130,55 @@ if data_router is not None:
     app.include_router(data_router)
     log.info("Mounted data app router; total routes: %d", len(app.routes))
 
-# WebSocket endpoint for /ticks
+# WebSocket endpoint for /ticks — mirror router JSON payload {ts,bid,ask}
 @app.websocket("/ticks")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # This is a simple placeholder. You may want to send real-time data here.
-            await websocket.send_text(f"Current time: {datetime.utcnow().isoformat()}")
-            await asyncio.sleep(1)
+            try:
+                # Import provider helpers lazily to avoid circular imports at module load
+                from .app import cached_twelvedata_quote, get_candles, now_utc_ms
+            except Exception:
+                cached_twelvedata_quote = None
+                get_candles = None
+                def now_utc_ms():
+                    return int(time.time() * 1000)
+
+            ts_ms = now_utc_ms() if callable(now_utc_ms) else int(time.time() * 1000)
+            bid = None
+            ask = None
+            last = None
+            # Try TwelveData quote first if available
+            try:
+                if cached_twelvedata_quote is not None:
+                    q = await cached_twelvedata_quote("XAUUSD")
+                    bid = q.get("bid")
+                    ask = q.get("ask")
+                    last = q.get("last")
+            except Exception:
+                pass
+            # Fallback to last price from candles
+            if last is None:
+                try:
+                    if get_candles is not None:
+                        _candles, last_p = await get_candles("XAUUSD")
+                        last = last_p
+                except Exception:
+                    last = None
+            # Synthesize a small spread if only last is known
+            if last is not None and (bid is None or ask is None):
+                spread = max(0.05, 0.0005 * float(last))
+                bid = float(last) - spread / 2.0
+                ask = float(last) + spread / 2.0
+
+            payload = {"ts": ts_ms}
+            if bid is not None:
+                payload["bid"] = float(bid)
+            if ask is not None:
+                payload["ask"] = float(ask)
+            await websocket.send_json(payload)
+            await asyncio.sleep(1.0)
     except Exception as e:
         log.warning(f"WebSocket Error: {e}")
     finally:
@@ -327,15 +367,29 @@ def health():
     }
 
 @app.get("/v1/levels/today")
-def levels_today():
-    if not DATABASE_URL:
-        raise HTTPException(503, "DB not configured")
-    with connect() as c, c.cursor() as cur:
-        cur.execute("SELECT date, do_price, pdh, pdl FROM levels WHERE date = CURRENT_DATE")
-        row = cur.fetchone()
-        if not row: raise HTTPException(404, "No levels for today")
-        d, do_price, pdh, pdl = row
-        return {"date": str(d), "do": do_price, "pdh": pdh, "pdl": pdl}
+async def levels_today(symbol: str = "XAUUSD"):
+    """
+    Align response with Android client: {DO, PDH, PDL, ts}.
+    Prefer DB values when available; otherwise delegate to provider-based logic.
+    """
+    # Try DB first if configured
+    if DATABASE_URL:
+        try:
+            with connect() as c, c.cursor() as cur:
+                cur.execute("SELECT do_price, pdh, pdl FROM levels WHERE date = CURRENT_DATE")
+                row = cur.fetchone()
+                if row:
+                    do_price, pdh, pdl = row
+                    return {"DO": do_price, "PDH": pdh, "PDL": pdl, "ts": int(time.time() * 1000)}
+        except Exception:
+            # fall through to provider path
+            pass
+    # Delegate to router provider implementation for consistency
+    try:
+        from .app import v1_levels_today as provider_levels_today
+        return await provider_levels_today(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"levels/today: {e}")
 
 @app.get("/v1/calendar/upcoming")
 def calendar_upcoming(window: str = "8h"):
@@ -378,8 +432,14 @@ async def nowcast():
             ]}
         return {"score": _score_from(drivers), "drivers": drivers}
 
-    # cache the whole payload as well (2 minutes)
-    return await _cached("nowcast", 120, build)
+    # cache the whole payload as well (2 minutes) and attach ts like v1 in app router
+    resp = await _cached("nowcast", 120, build)
+    try:
+        if isinstance(resp, dict) and "ts" not in resp:
+            resp = {**resp, "ts": int(time.time() * 1000)}
+    except Exception:
+        pass
+    return resp
 
 @app.get("/v1/xau/series5m")
 async def xau_series5m():
