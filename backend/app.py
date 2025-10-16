@@ -1147,8 +1147,14 @@ def _find_sast_midnight_open(candles) -> Optional[float]:
 
 
 async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
-    # Yahoo removed; keep signature for compatibility and return None
+    """Fetch 5m intraday candles for a Yahoo symbol."""
+    if _is_yf_blocked():
         return None
+    res = await yahoo_series_5m(symbol)
+    if not res:
+        return None
+    candles, last = res
+    return {"candles": candles, "last": last}
 
 
 async def _fetch_intraday_yf_series_multi(symbols):
