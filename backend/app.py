@@ -1459,15 +1459,17 @@ async def home():
             if not dxy_added:
                 # Yahoo then FRED fallback
                 try:
-                    yp = await yahoo_quote_pct("^DXY")
-                    if yp is not None:
-                        drivers.append({"key": "dxyZ", "value": float(yp), "stale": False})
-                        provider_status["yahoo:pct:DXY"] = True
+                    dxy_series = await _fetch_intraday_yf_series("^DXY")
+                    if dxy_series and dxy_series.get("candles"):
+                        c = dxy_series["candles"]
+                        z = _z_from_tail([x["c"] for x in c])
+                        drivers.append({"key": "dxyZ", "value": float(-z), "stale": False})
+                        provider_status["yahoo:series:DXY"] = True
                         dxy_added = True
                     else:
-                        provider_status["yahoo:pct:DXY"] = False
+                        provider_status["yahoo:series:DXY"] = False
                 except Exception:
-                    provider_status["yahoo:pct:DXY"] = False
+                    provider_status["yahoo:series:DXY"] = False
                 if not dxy_added:
                     # FRED DEXUSEU or DTWEXBGS percent (as coarse fallback)
                     fp = await fetch_fred_pct("DTWEXBGS")
@@ -1478,14 +1480,16 @@ async def home():
             provider_status["td_pct:DXY"] = False
             # Yahoo fallback for DXY pct
             try:
-                yp = await yahoo_quote_pct("^DXY")
-                if yp is not None:
-                    drivers.append({"key": "dxyZ", "value": float(yp), "stale": False})
-                    provider_status["yahoo:pct:DXY"] = True
+                dxy_series = await _fetch_intraday_yf_series("^DXY")
+                if dxy_series and dxy_series.get("candles"):
+                    c = dxy_series["candles"]
+                    z = _z_from_tail([x["c"] for x in c])
+                    drivers.append({"key": "dxyZ", "value": float(-z), "stale": False})
+                    provider_status["yahoo:series:DXY"] = True
                 else:
-                    provider_status["yahoo:pct:DXY"] = False
+                    provider_status["yahoo:series:DXY"] = False
             except Exception:
-                provider_status["yahoo:pct:DXY"] = False
+                provider_status["yahoo:series:DXY"] = False
         try:
             vix_added = False
             vix_pct = await td_quote_pct("VIX")
@@ -1495,26 +1499,52 @@ async def home():
             provider_status["td_pct:VIX"] = vix_added
             if not vix_added:
                 try:
-                    yp = await yahoo_quote_pct("^VIX")
-                    if yp is not None:
-                        drivers.append({"key": "vixZ", "value": float(yp), "stale": False})
-                        provider_status["yahoo:pct:VIX"] = True
+                    vix_series = await _fetch_intraday_yf_series("^VIX")
+                    if vix_series and vix_series.get("candles"):
+                        c = vix_series["candles"]
+                        z = _z_from_tail([x["c"] for x in c])
+                        drivers.append({"key": "vixZ", "value": float(z), "stale": False})
+                        provider_status["yahoo:series:VIX"] = True
+                        vix_added = True
                     else:
-                        provider_status["yahoo:pct:VIX"] = False
+                        provider_status["yahoo:series:VIX"] = False
                 except Exception:
-                    provider_status["yahoo:pct:VIX"] = False
+                    provider_status["yahoo:series:VIX"] = False
+                if not vix_added:
+                    try:
+                        ap = await fetch_alpha_global_quote_pct("VIX")
+                        if ap is not None:
+                            drivers.append({"key": "vixZ", "value": float(ap), "stale": False})
+                            provider_status["alpha:pct:VIX"] = True
+                            vix_added = True
+                        else:
+                            provider_status["alpha:pct:VIX"] = False
+                    except Exception:
+                        provider_status["alpha:pct:VIX"] = False
         except Exception:
             logging.exception("home: vix pct failed")
             provider_status["td_pct:VIX"] = False
             try:
-                yp = await yahoo_quote_pct("^VIX")
-                if yp is not None:
-                    drivers.append({"key": "vixZ", "value": float(yp), "stale": False})
-                    provider_status["yahoo:pct:VIX"] = True
+                vix_series = await _fetch_intraday_yf_series("^VIX")
+                if vix_series and vix_series.get("candles"):
+                    c = vix_series["candles"]
+                    z = _z_from_tail([x["c"] for x in c])
+                    drivers.append({"key": "vixZ", "value": float(z), "stale": False})
+                    provider_status["yahoo:series:VIX"] = True
                 else:
-                    provider_status["yahoo:pct:VIX"] = False
+                    provider_status["yahoo:series:VIX"] = False
             except Exception:
-                provider_status["yahoo:pct:VIX"] = False
+                provider_status["yahoo:series:VIX"] = False
+            if not vix_added:
+                try:
+                    ap = await fetch_alpha_global_quote_pct("VIX")
+                    if ap is not None:
+                        drivers.append({"key": "vixZ", "value": float(ap), "stale": False})
+                        provider_status["alpha:pct:VIX"] = True
+                    else:
+                        provider_status["alpha:pct:VIX"] = False
+                except Exception:
+                    provider_status["alpha:pct:VIX"] = False
         try:
             spy_added = False
             spy_pct = await td_quote_pct("SPY")
@@ -1525,15 +1555,17 @@ async def home():
             if not spy_added:
                 tried_alpha = False
                 try:
-                    yp = await yahoo_quote_pct("SPY")
-                    if yp is not None:
-                        drivers.append({"key": "risk_on", "value": float(yp), "stale": False})
-                        provider_status["yahoo:pct:SPY"] = True
+                    spy_series = await _fetch_intraday_yf_series("SPY")
+                    if spy_series and spy_series.get("candles"):
+                        c = spy_series["candles"]
+                        z = _z_from_tail([x["c"] for x in c])
+                        drivers.append({"key": "risk_on", "value": float(z), "stale": False})
+                        provider_status["yahoo:series:SPY"] = True
                         spy_added = True
                     else:
-                        provider_status["yahoo:pct:SPY"] = False
+                        provider_status["yahoo:series:SPY"] = False
                 except Exception:
-                    provider_status["yahoo:pct:SPY"] = False
+                    provider_status["yahoo:series:SPY"] = False
                 if not spy_added:
                     ap = await fetch_alpha_global_quote_pct("SPY")
                     if ap is not None:
@@ -1542,14 +1574,16 @@ async def home():
             logging.exception("home: spy pct failed")
             provider_status["td_pct:SPY"] = False
             try:
-                yp = await yahoo_quote_pct("SPY")
-                if yp is not None:
-                    drivers.append({"key": "risk_on", "value": float(yp), "stale": False})
-                    provider_status["yahoo:pct:SPY"] = True
+                spy_series = await _fetch_intraday_yf_series("SPY")
+                if spy_series and spy_series.get("candles"):
+                    c = spy_series["candles"]
+                    z = _z_from_tail([x["c"] for x in c])
+                    drivers.append({"key": "risk_on", "value": float(z), "stale": False})
+                    provider_status["yahoo:series:SPY"] = True
                 else:
-                    provider_status["yahoo:pct:SPY"] = False
+                    provider_status["yahoo:series:SPY"] = False
             except Exception:
-                provider_status["yahoo:pct:SPY"] = False
+                provider_status["yahoo:series:SPY"] = False
         try:
             fred = await fetch_fred_series("DFII10", max_points=365)
             if fred and fred.get("values"):
