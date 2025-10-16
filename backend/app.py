@@ -1,3 +1,16 @@
+@app.get("/v1/fred/latest")
+async def v1_fred_latest(series: str = "DFII10"):
+    """Return latest value for a FRED series (e.g., DFII10, DGS10)."""
+    try:
+        data = await fred_latest(series)
+        if not data:
+            raise HTTPException(status_code=404, detail="No data")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"fred/latest: {e}")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -22,6 +35,8 @@ TWELVE_KEY = os.getenv("TWELVEDATA_API_KEY")
 PRICE_SOURCE = os.getenv("PRICE_SOURCE", "auto").lower()  # auto|twelvedata|dukascopy|stooq|alpha
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 FRED_KEY = os.getenv("FRED_API_KEY")
+GOLDAPI_BASE = "https://www.goldapi.io/api"
+GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
 
 app = FastAPI()
 # Allow mobile clients to call the API (adjust origins if you want to restrict)
@@ -87,31 +102,31 @@ async def levels_today_cached(symbol: str) -> Optional[dict]:
     if hit and now < hit[0]:
         return hit[1]
     try:
-        # Reuse existing computation path
-        candles, _last = await get_candles(symbol)
-        now_utc = datetime.now(timezone.utc)
-        today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        prev_midnight = today_midnight - timedelta(days=1)
-        next_midnight = today_midnight + timedelta(days=1)
-        today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
-        prev_window = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
-        do_price = compute_levels_for_window(today_window)["DO"]
-        prev_levels = compute_levels_for_window(prev_window)
-        # If previous day range is missing (short series), fallback to Stooq for PDH/PDL
-        if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+        # Preferred PDH/PDL from Stooq daily
+        prev_levels = await stooq_daily_pdh_pdl(symbol)
+        # DO priority: GoldAPI open -> candles -> Stooq daily open
+        do_price = None
+        try:
+            gq = await cached_goldapi_quote(symbol)
+            do_price = gq.get("open") if gq else None
+        except Exception:
+            pass
+        if do_price is None:
             try:
-                candles_s, _last_s = await fetch_stooq(symbol)
-                prev_window_s = filter_candles(candles_s, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
-                prev_levels_s = compute_levels_for_window(prev_window_s)
-                if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
-                    prev_levels = prev_levels_s
+                candles, _last = await get_candles(symbol)
+                now_utc = datetime.now(timezone.utc)
+                today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+                next_midnight = today_midnight + timedelta(days=1)
+                today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
+                do_price = compute_levels_for_window(today_window)["DO"]
             except Exception:
                 pass
-        payload = {
-            "DO": do_price,
-            "PDH": prev_levels["PDH"],
-            "PDL": prev_levels["PDL"],
-        }
+        if do_price is None:
+            try:
+                do_price = await stooq_daily_open_today(symbol)
+            except Exception:
+                pass
+        payload = {"DO": do_price, "PDH": prev_levels.get("PDH"), "PDL": prev_levels.get("PDL")}
         _cache[key] = (_next_utc_midnight_ms(), payload)
         return payload
     except Exception:
@@ -482,6 +497,77 @@ async def fetch_stooq(symbol: str):
     return candles, last_price
 
 
+async def fetch_stooq_daily(symbol: str) -> list[dict]:
+    """Fetch Stooq daily OHLC CSV rows (oldest->newest). Columns: Date,Open,High,Low,Close,Volume"""
+    pair = symbol.lower()
+    ticker = "xauusd" if pair == "xauusd" else pair
+    url = f"https://stooq.com/q/d/l/?s={ticker}&i=d"
+    r = await _client.get(url, timeout=15)
+    r.raise_for_status()
+    text = r.text
+    f = StringIO(text)
+    # Stooq daily header typically capitalized; read case-insensitively
+    reader = csv.DictReader(f)
+    rows = []
+    for row in reader:
+        try:
+            # Normalize keys
+            rmap = {k.lower(): v for k, v in row.items()}
+            dt_str = rmap.get("date") or rmap.get("d")
+            o = float(rmap.get("open")) if rmap.get("open") not in (None, "") else None
+            h = float(rmap.get("high")) if rmap.get("high") not in (None, "") else None
+            l = float(rmap.get("low")) if rmap.get("low") not in (None, "") else None
+            c = float(rmap.get("close")) if rmap.get("close") not in (None, "") else None
+            if not dt_str:
+                continue
+            dt = datetime.strptime(dt_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            rows.append({"date": dt.date(), "open": o, "high": h, "low": l, "close": c})
+        except Exception:
+            continue
+    rows.sort(key=lambda x: x["date"])  # oldest -> newest
+    return rows
+
+async def stooq_daily_pdh_pdl(symbol: str) -> dict:
+    """Return PDH/PDL from Stooq daily CSV (previous completed day)."""
+    key = ("stooq_daily_lvls", symbol.upper())
+    hit = _cache_get(key, ttl_ms=15 * 60 * 1000)
+    if hit is not None:
+        return hit
+    rows = await fetch_stooq_daily(symbol)
+    if len(rows) < 2:
+        out = {"PDH": None, "PDL": None}
+        _cache_put(key, out)
+        return out
+    # Previous day = last completed day before today
+    today = datetime.now(timezone.utc).date()
+    # Filter rows strictly before today
+    hist = [r for r in rows if r["date"] < today]
+    if len(hist) < 2:
+        out = {"PDH": None, "PDL": None}
+        _cache_put(key, out)
+        return out
+    prev_day = hist[-1]  # yesterday or last completed
+    out = {"PDH": float(prev_day.get("high")) if prev_day.get("high") is not None else None,
+           "PDL": float(prev_day.get("low")) if prev_day.get("low") is not None else None}
+    _cache_put(key, out)
+    return out
+
+async def stooq_daily_open_today(symbol: str) -> Optional[float]:
+    """Return today's daily open from Stooq if today's row exists; else None."""
+    key = ("stooq_daily_open", symbol.upper())
+    hit = _cache_get(key, ttl_ms=15 * 60 * 1000)
+    if hit is not None:
+        return hit
+    rows = await fetch_stooq_daily(symbol)
+    if not rows:
+        _cache_put(key, None)
+        return None
+    today = datetime.now(timezone.utc).date()
+    last = rows[-1]
+    val = float(last.get("open")) if last.get("date") == today and last.get("open") is not None else None
+    _cache_put(key, val)
+    return val
+
 async def fetch_twelvedata(symbol: str, outputsize: str = "60"):
     if not TWELVE_KEY:
         raise RuntimeError("TwelveData key missing")
@@ -623,6 +709,49 @@ async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
         pct = None
     _cache[key] = (now, pct)
     return pct
+
+
+async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
+    """GoldAPI realtime quote for XAU/USD. Returns {bid, ask, last, open}."""
+    if not GOLDAPI_KEY:
+        raise RuntimeError("GoldAPI key missing")
+    pair = symbol.upper()
+    if pair == "XAUUSD":
+        path = "XAU/USD"
+    else:
+        if len(pair) == 6:
+            path = f"{pair[:3]}/{pair[3:]}"
+        else:
+            path = pair.replace("_", "/")
+    url = f"{GOLDAPI_BASE}/{path}"
+    headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
+    r = await _client.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    def _to_f(v):
+        try:
+            return float(v) if v is not None else None
+        except Exception:
+            return None
+    out = {
+        "bid": _to_f((j or {}).get("bid")),
+        "ask": _to_f((j or {}).get("ask")),
+        "last": _to_f((j or {}).get("price")),
+        "open": _to_f((j or {}).get("open_price")),
+    }
+    if all(out.get(k) is None for k in ("bid", "ask", "last", "open")):
+        raise RuntimeError(f"GoldAPI: unexpected response {j}")
+    return out
+
+async def cached_goldapi_quote(symbol: str, ttl_sec: int = 60) -> Dict[str, float]:
+    key = ("gapi_quote", symbol.upper())
+    hit = _cache.get(key)
+    now = now_utc_ms()
+    if hit and (now - hit[0] < ttl_sec * 1000):
+        return hit[1]
+    q = await fetch_goldapi_quote(symbol)
+    _cache[key] = (now, q)
+    return q
 
 
 async def fetch_dukascopy(symbol: str, hours_back: int = 4):
@@ -1122,6 +1251,17 @@ async def fetch_fred_series(series_id: str, max_points: int = 365) -> Optional[D
     return payload
 
 
+async def fred_latest(series_id: str) -> Optional[Dict[str, Any]]:
+    """Return latest value and ts for a FRED series (cached via fetch_fred_series)."""
+    try:
+        s = await fetch_fred_series(series_id, max_points=365)
+        if not s or not s.get("values"):
+            return None
+        val = s["values"][-1]
+        return {"id": series_id, "value": float(val), "ts": s.get("ts")}
+    except Exception:
+        return None
+
 async def _yf_chart_with_volume(symbol: str, interval: str, range_: str) -> Optional[Dict[str, Any]]:
     # Removed Yahoo volume path; return None to disable dependent metrics
         return None
@@ -1555,46 +1695,63 @@ async def home():
         # Add DO context as a chip
         drivers.append({"key": "do_ctx", "value": do_contrib_val, "stale": False, "contribution": term_do / sum_abs})
 
-        # Quote for bid/ask and spread/quality
+        # Quote for bid/ask and spread/quality (GoldAPI preferred)
         bid = None
         ask = None
         spread_pts = None
+        # Try GoldAPI first
         try:
-            q = await cached_twelvedata_quote("XAUUSD")
-            bid = q.get("bid")
-            ask = q.get("ask")
+            gq = await cached_goldapi_quote("XAUUSD")
+            bid = gq.get("bid")
+            ask = gq.get("ask")
             if bid and ask:
                 last_price = (bid + ask) / 2.0
                 spread = max(0.0, float(ask) - float(bid))
-                spread_pts = int(round(spread * 100))  # ~0.01 per point
-            provider_status["td_quote:XAUUSD"] = True
+                spread_pts = int(round(spread * 100))
+            elif gq.get("last") is not None:
+                last_price = gq.get("last")
+            provider_status["gapi_quote:XAUUSD"] = True
         except Exception:
-            logging.exception("home: td quote failed")
-            provider_status["td_quote:XAUUSD"] = False
-            # Alpha realtime last, then Yahoo last
-            if last_price is None:
-                try:
-                    last_alpha = await fetch_alpha_fx_last("XAUUSD")
-                    if last_alpha is not None:
-                        last_price = last_alpha
-                        provider_status["alpha:last:XAUUSD"] = True
-                except Exception:
-                    provider_status["alpha:last:XAUUSD"] = False
+            provider_status["gapi_quote:XAUUSD"] = False
+            # Fallback to TwelveData
+            try:
+                q = await cached_twelvedata_quote("XAUUSD")
+                bid = q.get("bid")
+                ask = q.get("ask")
+                if bid and ask:
+                    last_price = (bid + ask) / 2.0
+                    spread = max(0.0, float(ask) - float(bid))
+                    spread_pts = int(round(spread * 100))  # ~0.01 per point
+                elif q.get("last") is not None:
+                    last_price = q.get("last")
+                provider_status["td_quote:XAUUSD"] = True
+            except Exception:
+                logging.exception("home: td quote failed")
+                provider_status["td_quote:XAUUSD"] = False
+                # Alpha realtime last, then Yahoo last
                 if last_price is None:
                     try:
-                        # try spot, then futures
-                        lp = None
-                        for s in _yf_symbol_xau():
-                            lp = await yahoo_last(s)
-                            if lp is not None:
-                                break
-                        if lp is not None:
-                            last_price = lp
-                            provider_status["yahoo:last:XAUUSD"] = True
-                        else:
-                            provider_status["yahoo:last:XAUUSD"] = False
+                        last_alpha = await fetch_alpha_fx_last("XAUUSD")
+                        if last_alpha is not None:
+                            last_price = last_alpha
+                            provider_status["alpha:last:XAUUSD"] = True
                     except Exception:
-                        provider_status["yahoo:last:XAUUSD"] = False
+                        provider_status["alpha:last:XAUUSD"] = False
+                    if last_price is None:
+                        try:
+                            # try spot, then futures
+                            lp = None
+                            for s in _yf_symbol_xau():
+                                lp = await yahoo_last(s)
+                                if lp is not None:
+                                    break
+                            if lp is not None:
+                                last_price = lp
+                                provider_status["yahoo:last:XAUUSD"] = True
+                            else:
+                                provider_status["yahoo:last:XAUUSD"] = False
+                        except Exception:
+                            provider_status["yahoo:last:XAUUSD"] = False
 
         # Quality state from spread/latency (best effort)
         latency_ms = 0
@@ -1639,6 +1796,33 @@ async def home():
             current_session = None
 
         # Compose payload (drivers caching handled separately if needed)
+        # DO priority in /home: GoldAPI open -> SAST candles -> Stooq daily open
+        if do_price is None:
+            try:
+                gq2 = await cached_goldapi_quote("XAUUSD")
+                if gq2.get("open") is not None:
+                    do_price = gq2.get("open")
+            except Exception:
+                pass
+        if do_price is None:
+            try:
+                do_price = await stooq_daily_open_today("XAUUSD")
+            except Exception:
+                pass
+        # FRED extras: real (DFII10), nominal (DGS10), breakeven = nominal - real
+        fred_real = None
+        fred_nom = None
+        fred_be = None
+        try:
+            fr = await fred_latest("DFII10")
+            fn = await fred_latest("DGS10")
+            if fr and fn:
+                fred_real = fr.get("value")
+                fred_nom = fn.get("value")
+                fred_be = float(fred_nom) - float(fred_real)
+        except Exception:
+            pass
+
         payload = {
             "price": {
                 "last": last_price,
@@ -1678,6 +1862,7 @@ async def home():
             "sessions": {"overlap_with_ny": (8 <= ny_now().hour < 12), "current": current_session},
             "quality": {"state": q_state, "spread_pts": spread_pts, "latency_ms": latency_ms},
             "gates": {"plan_lock": False, "reason": None, "news_lock": news_lock},
+            "fred": {"real10y": fred_real, "nominal10y": fred_nom, "breakeven10y": fred_be},
             # Best-effort recent alerts preview (stub). Replace with your real alerting pipeline.
             "alerts": [
                 {
@@ -1975,6 +2160,20 @@ async def v1_features(symbol: str = "XAUUSD"):
         # Freshness: last bar within 5 minutes
         fresh, stale_sec = _staleness(candles[-1]["t"] if candles else 0, end_ms, fresh_threshold_min=5)
 
+        # Add FRED block (best-effort)
+        fred_block = None
+        try:
+            fr = await fred_latest("DFII10")
+            fn = await fred_latest("DGS10")
+            if fr and fn:
+                fred_block = {
+                    "real10y": fr.get("value"),
+                    "nominal10y": fn.get("value"),
+                    "breakeven10y": float(fn.get("value")) - float(fr.get("value"))
+                }
+        except Exception:
+            fred_block = None
+
         return {
             "gapPct": gap_pct,
             "atr20x": atr20x,
@@ -1986,6 +2185,7 @@ async def v1_features(symbol: str = "XAUUSD"):
             "fresh": fresh,
             "staleSec": stale_sec,
             "ts": end_ms,
+            "fred": fred_block,
         }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"features: {e}")
@@ -2002,13 +2202,21 @@ async def v1_price_tick(symbol: str = "XAUUSD"):
         bid = None
         ask = None
         last = None
+        # GoldAPI preferred
         try:
-            q = await fetch_twelvedata_quote(symbol)
-            bid = q.get("bid")
-            ask = q.get("ask")
-            last = q.get("last")
+            gq = await cached_goldapi_quote(symbol)
+            bid = gq.get("bid")
+            ask = gq.get("ask")
+            last = gq.get("last")
         except Exception:
-            pass
+            # Fallback to TwelveData
+            try:
+                q = await fetch_twelvedata_quote(symbol)
+                bid = q.get("bid")
+                ask = q.get("ask")
+                last = q.get("last")
+            except Exception:
+                pass
         if last is None and (bid is None or ask is None):
             try:
                 _candles, last_p = await get_candles(symbol)
@@ -2089,20 +2297,28 @@ async def v1_levels_today(symbol: str = "XAUUSD"):
     the previous UTC day. Computed from the current candles feed.
     """
     try:
-        # Strict UTC yesterday with tolerance; DO from today UTC open
-        candles, _last = await get_candles(symbol)
-        now_utc = datetime.now(timezone.utc)
-        today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        next_midnight = today_midnight + timedelta(days=1)
-        today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
-        do_price = compute_levels_for_window(today_window)["DO"]
-        prev_levels = _compute_prev_day_levels_strict_utc(candles, max_lookback_days=3)
-        if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+        # Preferred PDH/PDL from Stooq daily
+        prev_levels = await stooq_daily_pdh_pdl(symbol)
+        # DO priority: GoldAPI open -> candles -> Stooq daily open
+        do_price = None
+        try:
+            gq = await cached_goldapi_quote(symbol)
+            do_price = gq.get("open") if gq else None
+        except Exception:
+            pass
+        if do_price is None:
             try:
-                c2, _lp2 = await fetch_stooq(symbol)
-                prev_levels_s = _compute_prev_day_levels_strict_utc(c2, max_lookback_days=3)
-                if prev_levels_s.get("PDH") is not None and prev_levels_s.get("PDL") is not None:
-                    prev_levels = prev_levels_s
+                candles, _last = await get_candles(symbol)
+                now_utc = datetime.now(timezone.utc)
+                today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+                next_midnight = today_midnight + timedelta(days=1)
+                today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
+                do_price = compute_levels_for_window(today_window)["DO"]
+            except Exception:
+                pass
+        if do_price is None:
+            try:
+                do_price = await stooq_daily_open_today(symbol)
             except Exception:
                 pass
         return {"DO": do_price, "PDH": prev_levels.get("PDH"), "PDL": prev_levels.get("PDL"), "ts": now_utc_ms()}

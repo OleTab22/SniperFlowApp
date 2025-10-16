@@ -20,6 +20,10 @@ services:
         generateValue: true
       - key: TWELVEDATA_API_KEY
         generateValue: true
+      - key: FRED_API_KEY
+        generateValue: true
+      - key: GOLDAPI_KEY
+        generateValue: true
     healthCheckPath: /v1/health
     autoDeploy: true
 
