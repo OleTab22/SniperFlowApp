@@ -1555,12 +1555,21 @@ async def home():
         try:
             fred = await fetch_fred_series("DFII10", max_points=365)
             if fred and fred.get("values"):
-                # use z-score as before, sign inverted for gold tilt
+                # real yields (invert sign for gold tilt)
                 drivers.append({"key": "realZ", "value": float(-_z_from_tail(fred["values"], lookback=252)), "stale": False})
             provider_status["fred:DFII10"] = True
         except Exception:
             logging.exception("home: fred DFII10 failed")
             provider_status["fred:DFII10"] = False
+        # Add nominal 10y as an extra driver (invert sign for gold tilt)
+        try:
+            fred_nominal = await fetch_fred_series("DGS10", max_points=365)
+            if fred_nominal and fred_nominal.get("values"):
+                drivers.append({"key": "nominalZ", "value": float(-_z_from_tail(fred_nominal["values"], lookback=252)), "stale": False})
+            provider_status["fred:DGS10"] = True
+        except Exception:
+            logging.exception("home: fred DGS10 failed")
+            provider_status["fred:DGS10"] = False
 
         # Calendar next red using existing stub
         cal = await calendar_upcoming("USD", 72)
@@ -1667,6 +1676,8 @@ async def home():
         term_mom = 0.30 * mom
         # risk_on contribution (not part of logit currently)
         term_risk = 0.10 * (next((d.get("value", 0.0) for d in drivers if d.get("key") == "risk_on"), 0.0))
+        # Nominal yields contribution (not part of logit currently)
+        term_nominal = 0.10 * (next((d.get("value", 0.0) for d in drivers if d.get("key") == "nominalZ"), 0.0))
         # DO context contribution (signed distance normalized by prev range)
         do_contrib_val = 0.0
         try:
@@ -1682,7 +1693,7 @@ async def home():
         confidence = max(p_up, 1.0 - p_up)
 
         # Add contribution fractions for driver chips
-        sum_abs = sum(abs(x) for x in (term_dxy, term_real, term_vix, term_mom, term_risk, term_do)) or 1.0
+        sum_abs = sum(abs(x) for x in (term_dxy, term_real, term_vix, term_mom, term_risk, term_do, term_nominal)) or 1.0
         for d in drivers:
             if d["key"] == "dxyZ":
                 d["contribution"] = term_dxy / sum_abs
@@ -1692,6 +1703,8 @@ async def home():
                 d["contribution"] = term_vix / sum_abs
             elif d["key"] == "risk_on":
                 d["contribution"] = term_risk / sum_abs
+            elif d["key"] == "nominalZ":
+                d["contribution"] = term_nominal / sum_abs
         # Add DO context as a chip
         drivers.append({"key": "do_ctx", "value": do_contrib_val, "stale": False, "contribution": term_do / sum_abs})
 
