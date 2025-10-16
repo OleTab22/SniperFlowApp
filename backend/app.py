@@ -149,7 +149,7 @@ def _yf_symbol_xau() -> list[str]:
 
 async def yahoo_last(sym: str) -> Optional[float]:
     key = ("yf_last", sym)
-    hit = _cache_get(key, ttl_ms=120_000)
+    hit = _cache_get(key, ttl_ms=30_000)
     if hit is not None:
         return hit
     if _is_yf_blocked():
@@ -175,7 +175,7 @@ async def yahoo_last(sym: str) -> Optional[float]:
 
 async def yahoo_quote_pct(sym: str) -> Optional[float]:
     key = ("yf_pct", sym)
-    hit = _cache_get(key, ttl_ms=600_000)
+    hit = _cache_get(key, ttl_ms=30_000)
     if hit is not None:
         return hit
     if _is_yf_blocked():
@@ -201,7 +201,7 @@ async def yahoo_quote_pct(sym: str) -> Optional[float]:
 
 async def yahoo_series_5m(sym: str) -> Optional[Tuple[list, float]]:
     key = ("yf_series5m", sym)
-    hit = _cache_get(key, ttl_ms=600_000)
+    hit = _cache_get(key, ttl_ms=30_000)
     if hit is not None:
         return hit
     if _is_yf_blocked():
@@ -376,7 +376,7 @@ async def fetch_alpha_fx_last(symbol: str) -> Optional[float]:
         return None
     key = ("alpha_fx_last", symbol.upper())
     hit = _cache.get(key)
-    if hit and (now_utc_ms() - hit[0]) < 120_000:
+    if hit and (now_utc_ms() - hit[0]) < 10_000:
         return hit[1]
     params = {
         "function": "CURRENCY_EXCHANGE_RATE",
@@ -410,7 +410,7 @@ async def fetch_alpha_global_quote_pct(symbol: str) -> Optional[float]:
         return None
     key = ("alpha_pct", symbol.upper())
     hit = _cache.get(key)
-    if hit and (now_utc_ms() - hit[0]) < 600_000:
+    if hit and (now_utc_ms() - hit[0]) < 30_000:
         return hit[1]
     params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": ALPHA_KEY}
     r = await _client.get(ALPHA_BASE, params=params, timeout=10)
@@ -850,7 +850,7 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
 async def get_candles(symbol: str):
     key = ("candles", symbol.upper())
     ts_payload = _cache.get(key)
-    if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
+    if ts_payload and (now_utc_ms() - ts_payload[0] < 15_000):
         return ts_payload[1]
     # Explicit source override via env for diagnostics
     if PRICE_SOURCE in ("twelvedata", "dukascopy", "stooq", "alpha"):
@@ -1389,10 +1389,10 @@ async def v1_alerts(since: Optional[int] = None):
         raise HTTPException(status_code=502, detail=f"alerts: {e}")
 
 @router.get("/home")
-async def home():
+async def home(nocache: bool = False):
     # Short-lived cache for consolidated payload to save upstream quotas
     try:
-        hit = _cache_get(("home", "XAUUSD"), ttl_ms=15_000)
+        hit = None if nocache else _cache_get(("home", "XAUUSD"), ttl_ms=5_000)
         if hit is not None:
             return hit
     except Exception:
@@ -1451,7 +1451,7 @@ async def home():
         drivers = []
         try:
             dxy_added = False
-            dxy_pct = await td_quote_pct("DXY")
+            dxy_pct = await td_quote_pct("DXY", ttl_sec=60)
             if dxy_pct is not None:
                 drivers.append({"key": "dxyZ", "value": float(dxy_pct), "stale": False})
                 dxy_added = True
@@ -1492,7 +1492,7 @@ async def home():
                 provider_status["yahoo:series:DXY"] = False
         try:
             vix_added = False
-            vix_pct = await td_quote_pct("VIX")
+            vix_pct = await td_quote_pct("VIX", ttl_sec=60)
             if vix_pct is not None:
                 drivers.append({"key": "vixZ", "value": float(vix_pct), "stale": False})
                 vix_added = True
@@ -1547,7 +1547,7 @@ async def home():
                     provider_status["alpha:pct:VIX"] = False
         try:
             spy_added = False
-            spy_pct = await td_quote_pct("SPY")
+            spy_pct = await td_quote_pct("SPY", ttl_sec=60)
             if spy_pct is not None:
                 drivers.append({"key": "risk_on", "value": float(spy_pct), "stale": False})
                 spy_added = True
@@ -1757,10 +1757,27 @@ async def home():
                 except Exception:
                     pass
 
+        # Rebuild macro drivers using the unified engine so signs/scale match v1 consistently
+        try:
+            drv_u = await _compute_drivers_payload()
+            dxy_z = float(drv_u.get("dxy", {}).get("z", 0.0))           # already sign-adjusted (− for gold)
+            real_z = float(drv_u.get("real10y", {}).get("z", 0.0))      # already sign-adjusted (− for gold)
+            vix_z = float(drv_u.get("vix", {}).get("z", 0.0))
+            risk_on_z = float(drv_u.get("risk_on", {}).get("z", 0.0))
+            nominal_z = float(drv_u.get("nominal10y", {}).get("z", 0.0))
+            # Replace driver chips to match these z-scores
+            drivers = [
+                {"key": "dxyZ", "value": dxy_z, "stale": not drv_u.get("dxy", {}).get("fresh", False)},
+                {"key": "realZ", "value": real_z, "stale": not drv_u.get("real10y", {}).get("fresh", False)},
+                {"key": "vixZ", "value": vix_z, "stale": not drv_u.get("vix", {}).get("fresh", False)},
+            ]
+        except Exception:
+            dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
+            real_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "realZ"), 0.0)
+            vix_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "vixZ"), 0.0)
+            risk_on_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "risk_on"), 0.0)
+            nominal_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "nominalZ"), 0.0)
         # Simple nowcast based on driver z-scores (logistic transform)
-        dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
-        real_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "realZ"), 0.0)
-        vix_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "vixZ"), 0.0)
         # Momentum driver based on today's move vs intraday range
         mom = 0.0
         try:
@@ -1773,14 +1790,14 @@ async def home():
         real_z_c = max(-1.5, min(1.5, -real_z))
         dxy_z_c = -dxy_z
         vix_z_c = vix_z
-        term_dxy = 0.60 * dxy_z_c
+        term_dxy = 0.50 * dxy_z_c
         term_real = 0.20 * real_z_c
-        term_vix = 0.20 * vix_z_c
-        term_mom = 0.30 * mom
+        term_vix = 0.10 * vix_z_c
+        term_mom = 0.35 * mom
         # risk_on contribution (not part of logit currently)
-        term_risk = 0.10 * (next((d.get("value", 0.0) for d in drivers if d.get("key") == "risk_on"), 0.0))
+        term_risk = 0.15 * (risk_on_z if 'risk_on_z' in locals() else next((d.get("value", 0.0) for d in drivers if d.get("key") == "risk_on"), 0.0))
         # Nominal yields contribution (not part of logit currently)
-        term_nominal = 0.10 * (next((d.get("value", 0.0) for d in drivers if d.get("key") == "nominalZ"), 0.0))
+        term_nominal = 0.05 * (nominal_z if 'nominal_z' in locals() else next((d.get("value", 0.0) for d in drivers if d.get("key") == "nominalZ"), 0.0))
         # DO context contribution (signed distance normalized by prev range)
         do_contrib_val = 0.0
         try:
@@ -1817,7 +1834,7 @@ async def home():
         spread_pts = None
         # Try GoldAPI first
         try:
-            gq = await cached_goldapi_quote("XAUUSD")
+            gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
             bid = gq.get("bid")
             ask = gq.get("ask")
             if bid and ask:
@@ -1831,7 +1848,7 @@ async def home():
             provider_status["gapi_quote:XAUUSD"] = False
             # Fallback to TwelveData
             try:
-                q = await cached_twelvedata_quote("XAUUSD")
+                q = await cached_twelvedata_quote("XAUUSD", ttl_sec=5)
                 bid = q.get("bid")
                 ask = q.get("ask")
                 if bid and ask:
@@ -1915,7 +1932,7 @@ async def home():
         # DO priority in /home: GoldAPI open -> SAST candles -> Stooq daily open
         if do_price is None:
             try:
-                gq2 = await cached_goldapi_quote("XAUUSD")
+                gq2 = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
                 if gq2.get("open") is not None:
                     do_price = gq2.get("open")
             except Exception:
@@ -2008,10 +2025,11 @@ async def home():
             ],
         }
         payload["provider_status"] = provider_status
-        try:
-            _cache_put(("home", "XAUUSD"), payload)
-        except Exception:
-            pass
+        if not nocache:
+            try:
+                _cache_put(("home", "XAUUSD"), payload)
+            except Exception:
+                pass
         return payload
     except Exception as e:
         logging.exception("home: fatal error")
@@ -2130,7 +2148,7 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
 
 
 @router.get("/v1/drivers")
-async def v1_drivers():
+async def v1_drivers(nocache: bool = False):
     """
     Macro drivers used by the client: DXY (−), real10y (−), VIX (+).
     Returns z-scores, weights, freshness flags, and staleness seconds.
@@ -2138,17 +2156,18 @@ async def v1_drivers():
     try:
         key = ("drivers", "XAUUSD")
         ts_payload = _cache.get(key)
-        if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
+        if not nocache and ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
             return ts_payload[1]
         payload = await _compute_drivers_payload()
-        _cache[key] = (now_utc_ms(), payload)
+        if not nocache:
+            _cache[key] = (now_utc_ms(), payload)
         return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"drivers: {e}")
 
 
 @router.get("/v1/nowcast")
-async def v1_nowcast():
+async def v1_nowcast(nocache: bool = False):
     """
     Simple nowcast score in [-100, 100], based on drivers with signs:
       logit = 0.60 * dxy.z  +  0.20 * real10y.z  +  0.20 * vix.z
@@ -2159,11 +2178,12 @@ async def v1_nowcast():
         # reuse cached drivers to reduce hits
         key = ("drivers", "XAUUSD")
         ts_payload = _cache.get(key)
-        if ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
+        if not nocache and ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
             drv = ts_payload[1]
         else:
             drv = await _compute_drivers_payload()
-            _cache[key] = (now_utc_ms(), drv)
+            if not nocache:
+                _cache[key] = (now_utc_ms(), drv)
         # Apply staleness decay: w' = w * exp(-staleSec / tau)
         import math as _m
         tau = 45 * 60  # 45 minutes
