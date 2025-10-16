@@ -123,12 +123,26 @@ app = FastAPI(title="SniperFlow API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Include non-DB endpoints from backend.app (market/levels/home etc.) so one server serves all
+data_app = None
 try:
-    from .app import app as data_app
-    app.include_router(data_app.router)
+    # Package-relative when running as backend.main
+    from .app import app as _data_app
+    data_app = _data_app
 except Exception:
-    # If the import fails in certain environments, continue with DB-only API
-    pass
+    try:
+        # Module-local when running with --app-dir backend (module name 'app')
+        from app import app as _data_app
+        data_app = _data_app
+    except Exception:
+        data_app = None
+
+if data_app is not None:
+    app.include_router(data_app.router)
+
+# Lightweight health path for clients expecting /health
+@app.get("/health")
+def health_root():
+    return {"status": "ok"}
 
 def migrate_once():
     """
