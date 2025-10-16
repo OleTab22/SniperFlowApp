@@ -967,7 +967,6 @@ def build_sessions_windows(ny_anchor: datetime):
     return windows
 
 
-@app.on_event("startup")
 async def startup():
     global _client
     _client = httpx.AsyncClient(headers={
@@ -975,17 +974,16 @@ async def startup():
     })
 
 
-@app.on_event("shutdown")
 async def shutdown():
     await _client.aclose()
 
 
-@app.get("/health")
+@router.get("/health")
 async def health():
     return {"status": "ok"}
 
 
-@app.get("/")
+@router.get("/")
 async def root():
     return {
         "ok": True,
@@ -998,7 +996,7 @@ async def root():
     }
 
 
-@app.get("/levels/intraday")
+@router.get("/levels/intraday")
 async def intraday(symbol: str = "XAUUSD"):
     try:
         candles, last_price = await get_candles(symbol)
@@ -1035,7 +1033,7 @@ async def intraday(symbol: str = "XAUUSD"):
         raise HTTPException(status_code=502, detail=str(e))
 
 
-@app.get("/levels/intraday/sessions")
+@router.get("/levels/intraday/sessions")
 async def intraday_sessions(symbol: str = "XAUUSD"):
     try:
         candles, last_price = await get_candles(symbol)
@@ -1066,7 +1064,7 @@ async def intraday_sessions(symbol: str = "XAUUSD"):
         raise HTTPException(status_code=502, detail=str(e))
 
 
-@app.get("/market/ohlc24h")
+@router.get("/market/ohlc24h")
 async def ohlc_24h(symbol: str = "XAUUSD"):
     try:
         candles, last_price = await get_candles(symbol)
@@ -1096,7 +1094,7 @@ async def ohlc_24h(symbol: str = "XAUUSD"):
         raise HTTPException(status_code=502, detail=str(e))
 
 
-@app.get("/calendar/upcoming")
+@router.get("/calendar/upcoming")
 async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
     # Simple stub: an event in 42 minutes from now
     now_ms = now_utc_ms()
@@ -1371,7 +1369,7 @@ def _stub_alerts(now_ms: int):
     ]
 
 
-@app.get("/v1/alerts")
+@router.get("/v1/alerts")
 async def v1_alerts(since: Optional[int] = None):
     """Return recent alerts (stub). since is epoch seconds; filters by age."""
     try:
@@ -1384,7 +1382,7 @@ async def v1_alerts(since: Optional[int] = None):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"alerts: {e}")
 
-@app.get("/home")
+@router.get("/home")
 async def home():
     # Short-lived cache for consolidated payload to save upstream quotas
     try:

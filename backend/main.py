@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from datetime import datetime, timezone
 
 # Import the app router directly
-from .app import router as data_router
+from .app import router as data_router, startup as data_startup, shutdown as data_shutdown
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sniperflow")
@@ -266,8 +266,10 @@ def migrate_once():
             log.info("Migration complete.")
 
 @app.on_event("startup")
-def _startup():
-    # backoff to survive cold boots / transient DB readiness
+async def startup_event():
+    # Initialize the data app client
+    await data_startup()
+    # DB migration logic
     if not DATABASE_URL:
         return
     for i in range(5):
@@ -277,7 +279,11 @@ def _startup():
         except Exception as e:
             wait = 2 ** i
             log.warning("Migration attempt %s failed: %s (retrying in %ss)", i+1, e, wait)
-            time.sleep(wait)
+            await asyncio.sleep(wait)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await data_shutdown()
 
 # ---------- MODELS ----------
 class JournalIn(BaseModel):
