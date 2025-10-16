@@ -1651,12 +1651,27 @@ async def home():
             provider_status["fred:DFII10"] = False
         # Add nominal 10y as an extra driver (invert sign for gold tilt)
         try:
+            nominal_yield_values = None
             fred_nominal = await fetch_fred_series("DGS10", max_points=365)
             if fred_nominal and fred_nominal.get("values"):
-                drivers.append({"key": "nominalZ", "value": float(-_z_from_tail(fred_nominal["values"], lookback=252)), "stale": False})
-            provider_status["fred:DGS10"] = True
+                nominal_yield_values = fred_nominal["values"]
+                provider_status["fred:DGS10"] = True
+            else:
+                try:
+                    tnx_series = await _fetch_intraday_yf_series("^TNX")
+                    if tnx_series and tnx_series.get("candles"):
+                        # TNX is yield * 10
+                        nominal_yield_values = [c["c"] / 10.0 for c in tnx_series["candles"]]
+                        provider_status["yahoo:series:TNX"] = True
+                except Exception:
+                    provider_status["yahoo:series:TNX"] = False
+
+            if nominal_yield_values:
+                drivers.append({"key": "nominalZ", "value": float(-_z_from_tail(nominal_yield_values, lookback=252)), "stale": False})
+            else:
+                provider_status["fred:DGS10"] = False
         except Exception:
-            logging.exception("home: fred DGS10 failed")
+            logging.exception("home: nominal yields failed")
             provider_status["fred:DGS10"] = False
 
         # Calendar next red using existing stub
