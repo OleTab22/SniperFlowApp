@@ -3,10 +3,13 @@ import asyncio
 import httpx
 from collections import defaultdict
 import psycopg2, psycopg2.extras
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timezone
+
+# Import the app router directly
+from .app import app as data_app
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sniperflow")
@@ -123,28 +126,25 @@ app = FastAPI(title="SniperFlow API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Include non-DB endpoints from backend.app (market/levels/home etc.) so one server serves all
-data_app = None
-try:
-    # Package-relative when running as backend.main
-    from .app import app as _data_app
-    data_app = _data_app
-except Exception:
-    try:
-        # Module-local when running with --app-dir backend (module name 'app')
-        from app import app as _data_app
-        data_app = _data_app
-    except Exception:
-        try:
-            # Absolute package path if import system resolves 'backend'
-            from backend.app import app as _data_app
-            data_app = _data_app
-        except Exception as e:
-            log.warning("Router include failed: %s", e)
-            data_app = None
-
 if data_app is not None:
     app.include_router(data_app.router)
     log.info("Mounted data app router; total routes: %d", len(app.routes))
+
+# WebSocket endpoint for /ticks
+@app.websocket("/ticks")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            # This is a simple placeholder. You may want to send real-time data here.
+            await websocket.send_text(f"Current time: {datetime.utcnow().isoformat()}")
+            await asyncio.sleep(1)
+    except Exception as e:
+        log.warning(f"WebSocket Error: {e}")
+    finally:
+        await websocket.close()
+        log.info("WebSocket connection closed")
+
 
 # Lightweight health path for clients expecting /health
 @app.get("/health")
@@ -521,5 +521,3 @@ def delete_journal(jid: int):
         cur.execute("DELETE FROM journal WHERE id=%s", (jid,))
         c.commit()
         return {"ok": True}
-
-
