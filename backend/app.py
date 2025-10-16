@@ -1770,6 +1770,8 @@ async def home(nocache: bool = False):
                 {"key": "dxyZ", "value": dxy_z, "stale": not drv_u.get("dxy", {}).get("fresh", False)},
                 {"key": "realZ", "value": real_z, "stale": not drv_u.get("real10y", {}).get("fresh", False)},
                 {"key": "vixZ", "value": vix_z, "stale": not drv_u.get("vix", {}).get("fresh", False)},
+                {"key": "risk_on", "value": risk_on_z, "stale": not drv_u.get("risk_on", {}).get("fresh", False)},
+                {"key": "nominalZ", "value": nominal_z, "stale": not drv_u.get("nominal10y", {}).get("fresh", False)},
             ]
         except Exception:
             dxy_z = next((d.get("value", 0.0) for d in drivers if d.get("key") == "dxyZ"), 0.0)
@@ -1786,9 +1788,9 @@ async def home(nocache: bool = False):
                 mom = max(-1.0, min(1.0, mom))
         except Exception:
             mom = 0.0
-        # Mirror signs similar to client-side model
-        real_z_c = max(-1.5, min(1.5, -real_z))
-        dxy_z_c = -dxy_z
+        # Signs are already adjusted in drv_u (dxy and real negative when bearish for gold)
+        real_z_c = max(-1.5, min(1.5, real_z))
+        dxy_z_c = dxy_z
         vix_z_c = vix_z
         term_dxy = 0.50 * dxy_z_c
         term_real = 0.20 * real_z_c
