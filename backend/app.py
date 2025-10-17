@@ -27,6 +27,8 @@ import csv
 from io import StringIO
 import math
 import lzma
+import xml.etree.ElementTree as ET
+from dateutil import parser as dateparser
 import struct
 
 NY = pytz.timezone("America/New_York")
@@ -2122,29 +2124,52 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
 
     if dxy and dxy.get("candles"):
         last_ts = dxy["candles"][-1]["t"]
-        fresh, stale = _staleness(last_ts, end_ms)
+        # Allow up to 30 minutes before calling it stale
+        fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z = _z_from_tail([c["c"] for c in dxy["candles"]])
-        # invert sign for gold tilt
         out["dxy"] = {"z": float(-z), "w": 0.35, "fresh": fresh, "staleSec": stale, "sym": dxy.get("symbol")}
     else:
-        out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+        # Fallback to TwelveData percent change if available
+        try:
+            pct = await td_quote_pct("DXY")
+            if pct is not None:
+                out["dxy"] = {"z": float(-pct), "w": 0.35, "fresh": True, "staleSec": 0}
+            else:
+                out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+        except Exception:
+            out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
 
     if vix and vix["candles"]:
         last_ts = vix["candles"][-1]["t"]
-        fresh, stale = _staleness(last_ts, end_ms)
+        fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z = _z_from_tail([c["c"] for c in vix["candles"]])
         out["vix"] = {"z": float(z), "w": 0.20, "fresh": fresh, "staleSec": stale}
     else:
-        out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+        try:
+            pct = await td_quote_pct("VIX")
+            if pct is not None:
+                out["vix"] = {"z": float(pct), "w": 0.20, "fresh": True, "staleSec": 0}
+            else:
+                out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+        except Exception:
+            out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
 
     if tnx and tnx.get("candles"):
         last_ts = tnx["candles"][-1]["t"]
-        fresh, stale = _staleness(last_ts, end_ms)
-        # TNX is ~10x yield in %, divide by 10; invert sign for gold
+        fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z = _z_from_tail([c["c"]/10.0 for c in tnx["candles"]])
         out["nominal10y"] = {"z": float(-z), "w": 0.20, "fresh": fresh, "staleSec": stale}
     else:
-        out["nominal10y"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+        # Fallback to FRED DGS10 daily series
+        try:
+            fred_nom = await fetch_fred_series("DGS10", max_points=365)
+            if fred_nom and fred_nom.get("values"):
+                z = _z_from_tail(fred_nom["values"], lookback=252)
+                out["nominal10y"] = {"z": float(-z), "w": 0.20, "fresh": True, "staleSec": 0}
+            else:
+                out["nominal10y"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+        except Exception:
+            out["nominal10y"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
 
     # Real 10y from FRED DFII10 (daily)
     try:
@@ -2162,13 +2187,25 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
     # Risk-on proxy: +ES=F and -VIX
     if es and es.get("candles") and vix and vix.get("candles"):
         last_ts = min(es["candles"][-1]["t"], vix["candles"][-1]["t"])
-        fresh, stale = _staleness(last_ts, end_ms)
+        fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z_es = _z_from_tail([c["c"] for c in es["candles"]])
         z_vix = _z_from_tail([c["c"] for c in vix["candles"]])
         z_risk = 0.60 * z_es - 0.40 * z_vix
         out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": fresh, "staleSec": stale}
     else:
-        out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
+        # Fallback using TD percent changes for SPY and VIX
+        try:
+            spy_pct = await td_quote_pct("SPY")
+            vix_pct = await td_quote_pct("VIX")
+            if spy_pct is not None and vix_pct is not None:
+                z_risk = 0.60 * float(spy_pct) - 0.40 * float(vix_pct)
+                out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": True, "staleSec": 0}
+            elif spy_pct is not None:
+                out["risk_on"] = {"z": float(spy_pct), "w": 0.10, "fresh": True, "staleSec": 0}
+            else:
+                out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
+        except Exception:
+            out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
 
     # DO context driver (distance to DO/PDH/PDL, signed by current price vs DO)
     try:
@@ -2665,3 +2702,125 @@ async def v1_status(symbol: str = "XAUUSD"):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"status: {e}")
 
+
+@router.get("/v1/news")
+async def v1_news(symbols: str | None = None, q: str | None = None, limit: int = 20):
+    """
+    Aggregate news from multiple free sources (cached 5 minutes):
+      - Yahoo Finance RSS (symbols)
+      - Google News RSS (query)
+      - GDELT Doc API (query)
+
+    Returns: { items: [ { title, link, ts, src } ] }
+    Params:
+      symbols: comma-separated Yahoo symbols (e.g., GC=F,^DXY,SPY)
+      q: search query for Google News / GDELT (e.g., "gold OR XAUUSD OR DXY OR VIX")
+      limit: max items (1..100)
+    """
+    try:
+        cache_key = ("news", symbols or "-", q or "-")
+        hit = _cache_get(cache_key, ttl_ms=5 * 60 * 1000)
+        if hit is not None:
+            return hit
+
+        # Defaults
+        syms: list[str] = []
+        if symbols and symbols.strip():
+            syms = [s.strip() for s in symbols.split(",") if s.strip()]
+        if not syms:
+            syms = ["GC=F", "XAUUSD=X", "DX-Y.NYB", "^DXY", "SPY"]
+        query = (q or "XAUUSD OR gold price OR DXY OR VIX OR US yields").strip()
+
+        all_items: list[dict] = []
+
+        # 1) Yahoo Finance RSS
+        try:
+            rss_url = "https://feeds.finance.yahoo.com/rss/2.0/headline"
+            params = {"s": ",".join(syms), "region": "US", "lang": "en-US"}
+            ry = await _client.get(rss_url, params=params, timeout=10)
+            ry.raise_for_status()
+            root = ET.fromstring(ry.text)
+            for it in root.findall(".//item"):
+                title = (it.findtext("title") or "").strip()
+                link = (it.findtext("link") or "").strip()
+                pub = it.findtext("pubDate") or it.findtext("published") or it.findtext("dc:date")
+                ts = None
+                if pub:
+                    try:
+                        ts = to_utc_ms(dateparser.parse(pub))
+                    except Exception:
+                        ts = None
+                src = "yahoo"
+                all_items.append({"title": title, "link": link, "ts": ts, "src": src})
+        except Exception:
+            pass
+
+        # 2) Google News RSS (query)
+        try:
+            g_url = "https://news.google.com/rss/search"
+            gp = {"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"}
+            rg = await _client.get(g_url, params=gp, timeout=10)
+            rg.raise_for_status()
+            root = ET.fromstring(rg.text)
+            for it in root.findall(".//item"):
+                title = (it.findtext("title") or "").strip()
+                link = (it.findtext("link") or "").strip()
+                pub = it.findtext("pubDate")
+                ts = None
+                if pub:
+                    try:
+                        ts = to_utc_ms(dateparser.parse(pub))
+                    except Exception:
+                        ts = None
+                all_items.append({"title": title, "link": link, "ts": ts, "src": "google"})
+        except Exception:
+            pass
+
+        # 3) GDELT Doc API (JSON)
+        try:
+            gd_url = "https://api.gdeltproject.org/api/v2/doc/doc"
+            gp = {"query": query, "mode": "ArtList", "format": "json", "maxrecords": "50", "timespan": "1d"}
+            rgd = await _client.get(gd_url, params=gp, timeout=12)
+            rgd.raise_for_status()
+            j = rgd.json()
+            arts = (j or {}).get("articles") or (j or {}).get("artlist") or []
+            for a in arts:
+                try:
+                    title = str(a.get("title") or "").strip()
+                    link = str(a.get("url") or a.get("seendatelink") or a.get("sourceurl") or "").strip()
+                    ts = None
+                    if a.get("seendate"):
+                        try:
+                            ts = to_utc_ms(dateparser.parse(str(a.get("seendate"))))
+                        except Exception:
+                            ts = None
+                    src = a.get("sourcecountry") or a.get("domain") or "gdelt"
+                    if title or link:
+                        all_items.append({"title": title, "link": link, "ts": ts, "src": str(src)})
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Deduplicate by link or title
+        seen = set()
+        deduped: list[dict] = []
+        for it in all_items:
+            key = (it.get("link") or it.get("title") or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(it)
+
+        # Sort by ts desc when available
+        try:
+            deduped.sort(key=lambda x: x.get("ts") or 0, reverse=True)
+        except Exception:
+            pass
+
+        lim = max(1, min(100, int(limit)))
+        out = {"items": deduped[:lim]}
+        _cache_put(cache_key, out)
+        return out
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"news: {e}")

@@ -552,12 +552,14 @@ class MainActivity : AppCompatActivity() {
                         "vixZ" to "VIX",
                         "risk_on" to "Risk-on",
                         "do_ctx" to "DO context",
-                        "mom" to "Momentum"
+                        "mom" to "Momentum",
+                        "nominalZ" to "Nominal",
+                        "nominal10y" to "Nominal"
                     )
+                    // Show ALL drivers, not just top 4
                     var chips = (primary?.drivers ?: emptyList()).filter { it.key != null }
                         .distinctBy { it.key ?: "" }
                         .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
-                        .take(4)
 
                 
                     if (chips.isEmpty()) {
@@ -623,7 +625,6 @@ class MainActivity : AppCompatActivity() {
                             chips = mapped
                                 .distinctBy { it.key ?: "" }
                                 .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
-                                .take(4)
                         }
                         if (chips.isEmpty()) {
                             runCatching {
@@ -639,7 +640,6 @@ class MainActivity : AppCompatActivity() {
                                 chips = mapped
                                     .distinctBy { it.key ?: "" }
                                     .sortedByDescending { kotlin.math.abs(it.contribution ?: 0.0) }
-                                    .take(4)
                             }
                         }
                     } else {
@@ -670,20 +670,22 @@ class MainActivity : AppCompatActivity() {
                         val tv = TextView(this@MainActivity)
                         val v = d.value ?: 0.0
                         val contribVal = d.contribution ?: 0.0
-                        val contrib = String.format(Locale.getDefault(), " (%.0f%%)", kotlin.math.abs(contribVal * 100))
+                        val contrib = String.format(Locale.getDefault(), "%.0f%%", kotlin.math.abs(contribVal * 100))
                         val sign = if (v >= 0) "+" else ""
                         val valStr = String.format(Locale.getDefault(), "%.1f", v)
                         val label = DRIVER_LABEL[d.key ?: ""] ?: (d.key ?: "")
-                        tv.text = getString(R.string.driver_chip_text_fmt, label, "$sign$valStr", contrib)
+                        // More compact format using existing resource + parentheses: "DXY +0.5 (25%)"
+                        tv.text = getString(R.string.driver_chip_text_fmt, label, sign, valStr) + " (" + contrib + ")"
+                        tv.textSize = 13f
                         val color = if (v >= 0) R.color.colorPositive else R.color.colorNegative
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, color))
-                        tv.setPadding(16, 10, 16, 10)
+                        tv.setPadding(12, 8, 12, 8)
                         tv.background = ResourcesCompat.getDrawable(resources, R.drawable.bg_chip, theme)
                         val lp = com.google.android.flexbox.FlexboxLayout.LayoutParams(
                             com.google.android.flexbox.FlexboxLayout.LayoutParams.WRAP_CONTENT,
                             com.google.android.flexbox.FlexboxLayout.LayoutParams.WRAP_CONTENT
                         )
-                        lp.setMargins(0, 0, 12, 12)
+                        lp.setMargins(0, 0, 8, 8)
                         tv.layoutParams = lp
                         if (d.stale == true) tv.alpha = 0.6f else tv.alpha = 1.0f
                         tv.setOnClickListener {
