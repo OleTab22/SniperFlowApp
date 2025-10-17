@@ -1958,14 +1958,26 @@ async def home(nocache: bool = False):
         except Exception:
             pass
 
+        # Compatibility aliases for provider_status keys expected by the Android app
+        try:
+            # td_* aliases
+            provider_status["td_pct_DXY"] = bool(provider_status.get("td_pct:DXY"))
+            provider_status["td_pct_VIX"] = bool(provider_status.get("td_pct:VIX"))
+            provider_status["td_pct_SPY"] = bool(provider_status.get("td_pct:SPY"))
+            provider_status["td_quote_XAUUSD"] = bool(provider_status.get("td_quote:XAUUSD"))
+            # yahoo_* aliases
+            provider_status["yahoo_series_DXY"] = bool(provider_status.get("yahoo:series:DXY"))
+            provider_status["yahoo_series_VIX"] = bool(provider_status.get("yahoo:series:VIX"))
+            provider_status["yahoo_last_XAUUSD"] = bool(provider_status.get("yahoo:last:XAUUSD"))
+        except Exception:
+            pass
+
         payload = {
             "price": {
                 "last": last_price,
                 # These fields are computed for current SAST day
                 "change24h": change_day,
                 "pct24h": pct_day,
-                "high24h": high_day,
-                "low24h": low_day,
                 "updatedAt": end_ms,
                 "staleSec": 0 if last_price is not None else None,
                 "closes": [c["c"] for c in intraday] if ('intraday' in locals() and intraday) else ([_ for _ in []]),
@@ -2225,11 +2237,9 @@ async def v1_features(symbol: str = "XAUUSD"):
         candles, last_price = await get_candles(symbol)
 
         end_ms = now_utc_ms()
-        # 24h window
+        # 24h window (kept for potential internal use, but h24/l24 not returned)
         start_ms = end_ms - 24 * 60 * 60 * 1000
         w = [c for c in candles if c["t"] >= start_ms]
-        h24 = max((c["h"] for c in w), default=None)
-        l24 = min((c["l"] for c in w), default=None)
 
         # Gap% per spec: (today_open - prev_close)/prev_close*100 using UTC day
         now_utc = datetime.now(timezone.utc)
@@ -2317,8 +2327,6 @@ async def v1_features(symbol: str = "XAUUSD"):
             "atr20x": atr20x,
             "volPct": volPct,
             "activity": activity,
-            "h24": h24,
-            "l24": l24,
             "quality": quality,
             "fresh": fresh,
             "staleSec": stale_sec,
