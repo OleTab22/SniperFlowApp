@@ -2836,28 +2836,10 @@ async def v1_news(symbols: str | None = None, q: str | None = None, limit: int =
 async def v1_signals_recent(limit: int = 20):
     try:
         if not _signals_store:
-            # seed a couple of demo signals
-            def _seed(side: str, entry: float):
-                now_ms = now_utc_ms()
-                sl = entry - 6.0 if side.upper() == "LONG" else entry + 6.0
-                tp1 = entry + 9.0 if side.upper() == "LONG" else entry - 9.0
-                _signals_store.append({
-                    "id": f"sig-{now_ms}-{side.lower()}",
-                    "ts": now_ms,
-                    "symbol": "XAUUSD",
-                    "side": side.upper(),
-                    "entry": float(entry),
-                    "sl": float(sl),
-                    "tp1": float(tp1),
-                    "tp2": None,
-                    "time_stop_min": 45,
-                    "confidence": 0.62,
-                    "regime": "STABLE",
-                    "reasons": ["Momentum", "Retest", "Regime OK"],
-                    "status": "OPEN",
-                })
-            _seed("LONG", 2421.2)
-            _seed("SHORT", 2434.8)
+            # bootstrap with one generated candidate
+            gen = await _generate_signal("XAUUSD")
+            if gen:
+                _signals_store.append(gen)
         rows = sorted(_signals_store, key=lambda s: s.get("ts", 0), reverse=True)
         return rows[: max(1, min(100, limit))]
     except Exception as e:
@@ -2927,3 +2909,150 @@ async def _broadcast_signal(sig: dict):
         await asyncio.gather(*send_tasks, return_exceptions=True)
     except Exception:
         pass
+
+
+@router.post("/v1/signals/generate", status_code=201)
+async def v1_signals_generate(symbol: str = "XAUUSD"):
+    try:
+        sig = await _generate_signal(symbol)
+        if not sig:
+            return {"status": "noop"}
+        _signals_store.append(sig)
+        await _broadcast_signal(sig)
+        return {"ok": True, "id": sig.get("id")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"signals/generate: {e}")
+
+
+async def _latest_mid(symbol: str = "XAUUSD") -> tuple[float | None, int | None]:
+    """Return (mid, spread_pts) using primary providers with short TTL caches."""
+    try:
+        bid = ask = last = None
+        try:
+            gq = await cached_goldapi_quote(symbol, ttl_sec=5)
+            bid = gq.get("bid"); ask = gq.get("ask"); last = gq.get("last") or gq.get("price")
+        except Exception:
+            pass
+        if bid is None or ask is None:
+            try:
+                tq = await cached_twelvedata_quote(symbol, ttl_sec=5)
+                bid = bid or tq.get("bid"); ask = ask or tq.get("ask"); last = last or tq.get("last")
+            except Exception:
+                pass
+        mid = None
+        if bid is not None and ask is not None:
+            try:
+                mid = (float(bid) + float(ask)) / 2.0
+            except Exception:
+                mid = None
+        if mid is None:
+            try:
+                mid = float(last) if last is not None else None
+            except Exception:
+                mid = None
+        spread_pts = None
+        try:
+            if bid is not None and ask is not None:
+                spread_pts = int(round(max(0.0, float(ask) - float(bid)) * 100))
+        except Exception:
+            spread_pts = None
+        return mid, spread_pts
+    except Exception:
+        return None, None
+
+
+async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
+    """Build a signal from current drivers and price. Uses nowcast-style weights with logistic mapping."""
+    try:
+        # Drivers and weights
+        drivers = await _compute_drivers_payload()
+        # Map available z-values with correct sign for gold
+        dz = drivers.get("dxy", {})
+        vz = drivers.get("vix", {})
+        rz = drivers.get("real", drivers.get("real10y", {}))
+        noz = drivers.get("nominal", drivers.get("nominal10y", {}))
+        rk = drivers.get("risk_on", {})
+        mom = drivers.get("mom", {})
+        do_ctx = drivers.get("do_ctx", {})
+
+        # Default zeros if missing
+        dxy_v = float(dz.get("z") or 0.0) * -1.0
+        real_v = float(rz.get("z") or 0.0) * -1.0
+        vix_v = float(vz.get("z") or 0.0) * 1.0
+        mom_v = float(mom.get("z") or 0.0)
+        risk_v = float(rk.get("z") or 0.0)
+        nom_v = float(noz.get("z") or 0.0) * -1.0
+        do_v = float(do_ctx.get("z") or 0.0)
+
+        # Weights (aligned with rebalanced nowcast)
+        w_dxy, w_real, w_vix, w_mom, w_risk, w_nom, w_do = 0.50, 0.20, 0.10, 0.35, 0.15, 0.05, 0.10
+        lin = (
+            w_dxy * dxy_v +
+            w_real * real_v +
+            w_vix * vix_v +
+            w_mom * mom_v +
+            w_risk * risk_v +
+            w_nom * nom_v +
+            w_do * do_v
+        )
+        try:
+            import math
+            p_up = 1.0 / (1.0 + math.exp(-lin))
+        except Exception:
+            p_up = 0.5
+
+        side = "LONG" if p_up >= 0.55 else ("SHORT" if p_up <= 0.45 else None)
+        if side is None:
+            return None  # no edge
+
+        last, spread_pts = await _latest_mid(symbol)
+        if last is None:
+            return None
+
+        atr_proxy = max(0.1, 0.01 * float(last))  # ~1% of price as ATR20 proxy
+        sl_dist = 0.6 * atr_proxy
+        tp1_dist = 1.0 * atr_proxy
+        entry = float(last)
+        if side == "LONG":
+            sl = entry - sl_dist
+            tp1 = entry + tp1_dist
+        else:
+            sl = entry + sl_dist
+            tp1 = entry - tp1_dist
+
+        # Build contributions and reasons
+        contribs = [
+            ("DXY", w_dxy * dxy_v, dz.get("fresh", True)),
+            ("Real Yields", w_real * real_v, rz.get("fresh", True)),
+            ("VIX", w_vix * vix_v, vz.get("fresh", True)),
+            ("Momentum", w_mom * mom_v, mom.get("fresh", True)),
+            ("Risk-on", w_risk * risk_v, rk.get("fresh", True)),
+            ("Nominal", w_nom * nom_v, noz.get("fresh", True)),
+            ("DO context", w_do * do_v, do_ctx.get("fresh", True)),
+        ]
+        contribs.sort(key=lambda x: abs(x[1]), reverse=True)
+        reasons = []
+        for lbl, c, fr in contribs[:3]:
+            try:
+                reasons.append(f"{lbl} {('' if c>=0 else '')}{round(c,2)}{' (stale)' if not fr else ''}")
+            except Exception:
+                reasons.append(lbl)
+
+        sig = {
+            "id": f"sig-{now_utc_ms()}-{side.lower()}",
+            "ts": now_utc_ms(),
+            "symbol": symbol,
+            "side": side,
+            "entry": round(entry, 2),
+            "sl": round(sl, 2),
+            "tp1": round(tp1, 2),
+            "tp2": None,
+            "time_stop_min": 60,
+            "confidence": round(float(p_up), 4),
+            "regime": "NOWCAST-ML",
+            "reasons": reasons,
+            "status": "OPEN",
+        }
+        return sig
+    except Exception:
+        return None
