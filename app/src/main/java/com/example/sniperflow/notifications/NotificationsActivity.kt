@@ -82,7 +82,7 @@ class NotificationsActivity : AppCompatActivity() {
                     }
                     val v = d.value ?: 0.0
                     val sign = if (v >= 0) "+" else ""
-                    tv.text = getString(R.string.driver_chip_text_fmt, label, sign, String.format(java.util.Locale.getDefault(), "%.1f", v))
+                    tv.text = getString(R.string.driver_chip_text_fmt, label, sign, String.format(Locale.getDefault(), "%.1f", v))
                     tv.setPadding(12,8,12,8)
                     tv.background = ContextCompat.getDrawable(this@NotificationsActivity, R.drawable.bg_chip)
                     val lp = FlexboxLayout.LayoutParams(FlexboxLayout.LayoutParams.WRAP_CONTENT, FlexboxLayout.LayoutParams.WRAP_CONTENT)
@@ -151,6 +151,8 @@ private class SignalsAdapter : RecyclerView.Adapter<SignalsAdapter.VH>() {
     class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
         private val title = v.findViewById<TextView>(R.id.tvSigTitle)
         private val meta = v.findViewById<TextView>(R.id.tvSigMeta)
+        private val targets = v.findViewById<TextView>(R.id.tvSigTargets)
+        private val reason = v.findViewById<TextView>(R.id.tvSigReason)
         fun bind(s: SignalDto) {
             val sym = s.symbol ?: "XAUUSD"
             val side = (s.side ?: "").uppercase()
@@ -159,6 +161,10 @@ private class SignalsAdapter : RecyclerView.Adapter<SignalsAdapter.VH>() {
             val sl = s.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
             val conf = s.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
             meta.text = listOf(entry, sl, conf).joinToString("  •  ")
+            val tp1 = s.tp1?.let { String.format(Locale.getDefault(), "TP1 %.2f", it) } ?: "TP1 —"
+            val tp2 = s.tp2?.let { String.format(Locale.getDefault(), "TP2 %.2f", it) } ?: "TP2 —"
+            targets.text = listOf(tp1, tp2).joinToString("  •  ")
+            reason.text = s.reason ?: s.reasons?.firstOrNull() ?: ""
         }
     }
 }

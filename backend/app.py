@@ -3016,9 +3016,11 @@ async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
         if side == "LONG":
             sl = entry - sl_dist
             tp1 = entry + tp1_dist
+            tp2 = entry + 1.5 * atr_proxy
         else:
             sl = entry + sl_dist
             tp1 = entry - tp1_dist
+            tp2 = entry - 1.5 * atr_proxy
 
         # Build contributions and reasons
         contribs = [
@@ -3046,11 +3048,12 @@ async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
             "entry": round(entry, 2),
             "sl": round(sl, 2),
             "tp1": round(tp1, 2),
-            "tp2": None,
+            "tp2": round(tp2, 2),
             "time_stop_min": 60,
             "confidence": round(float(p_up), 4),
             "regime": "NOWCAST-ML",
             "reasons": reasons,
+            "reason": (reasons[0] if reasons else None),
             "status": "OPEN",
         }
         return sig

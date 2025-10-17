@@ -40,6 +40,7 @@ data class SignalDto(
     val confidence: Double?,
     val regime: String?,
     val reasons: List<String>?,
+    val reason: String?,
     val status: String?
 )
 
