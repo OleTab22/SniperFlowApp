@@ -732,6 +732,9 @@ async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
         "ask": _to_f((j or {}).get("ask")),
         "last": _to_f((j or {}).get("price")),
         "open": _to_f((j or {}).get("open_price")),
+        # GoldAPI provides 24h high/low fields (see docs); map if present
+        "high": _to_f((j or {}).get("high_price")),
+        "low": _to_f((j or {}).get("low_price")),
     }
     if all(out.get(k) is None for k in ("bid", "ask", "last", "open")):
         raise RuntimeError(f"GoldAPI: unexpected response {j}")
@@ -1394,6 +1397,9 @@ async def home(nocache: bool = False):
     try:
         hit = None if nocache else _cache_get(("home", "XAUUSD"), ttl_ms=5_000)
         if hit is not None:
+            from fastapi import Response
+            r = Response()
+            r.headers["Cache-Control"] = "public, max-age=5"
             return hit
     except Exception:
         pass
@@ -1888,9 +1894,16 @@ async def home(nocache: bool = False):
                         except Exception:
                             provider_status["yahoo:last:XAUUSD"] = False
 
-        # Quality state from spread/latency (best effort)
+        # Quality state from spread/latency with clamping for outliers
         latency_ms = 0
         if spread_pts is not None:
+            try:
+                # Clamp extreme spreads: if >0.5% of last price, treat as degraded
+                if last_price and abs(float(spread_pts)) >= int(round(0.005 * float(last_price) * 100)):
+                    # Normalize by setting to a degraded threshold
+                    spread_pts = max(21, min(30, int(round(0.003 * float(last_price) * 100))))
+            except Exception:
+                pass
             if spread_pts <= 20 and latency_ms <= 300:
                 q_state = "OK"
             elif spread_pts <= 30 and latency_ms <= 600:
@@ -1983,6 +1996,8 @@ async def home(nocache: bool = False):
                 "closes": [c["c"] for c in intraday] if ('intraday' in locals() and intraday) else ([_ for _ in []]),
                 "bid": bid,
                 "ask": ask,
+                # Populate 24h high/low from GoldAPI when available
+                **(lambda: (lambda gq: {"high24h": gq.get("high"), "low24h": gq.get("low")}) (gq) if 'gq' in locals() and isinstance(gq, dict) else {})()
             },
             "levels": {
                 "do": {"price": do_price},
@@ -2044,6 +2059,9 @@ async def home(nocache: bool = False):
                 _cache_put(("home", "XAUUSD"), payload)
             except Exception:
                 pass
+        from fastapi import Response
+        r = Response()
+        r.headers["Cache-Control"] = "public, max-age=5"
         return payload
     except Exception as e:
         logging.exception("home: fatal error")
@@ -2171,10 +2189,16 @@ async def v1_drivers(nocache: bool = False):
         key = ("drivers", "XAUUSD")
         ts_payload = _cache.get(key)
         if not nocache and ts_payload and (now_utc_ms() - ts_payload[0] < 60_000):
+            from fastapi import Response
+            r = Response()
+            r.headers["Cache-Control"] = "public, max-age=60"
             return ts_payload[1]
         payload = await _compute_drivers_payload()
         if not nocache:
             _cache[key] = (now_utc_ms(), payload)
+        from fastapi import Response
+        r = Response()
+        r.headers["Cache-Control"] = "public, max-age=60"
         return payload
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"drivers: {e}")
@@ -2200,7 +2224,10 @@ async def v1_nowcast(nocache: bool = False):
                 _cache[key] = (now_utc_ms(), drv)
         # Apply staleness decay: w' = w * exp(-staleSec / tau)
         import math as _m
-        tau = 45 * 60  # 45 minutes
+        try:
+            tau = int(os.getenv("NOWCAST_TAU_SEC", "2700"))
+        except Exception:
+            tau = 45 * 60
         def decay(d):
             w = float(d.get("w", 0.0))
             s = d.get("staleSec")
@@ -2237,7 +2264,7 @@ async def v1_features(symbol: str = "XAUUSD"):
         candles, last_price = await get_candles(symbol)
 
         end_ms = now_utc_ms()
-        # 24h window (kept for potential internal use, but h24/l24 not returned)
+        # 24h window (internal only). Prefer GoldAPI high/low if available.
         start_ms = end_ms - 24 * 60 * 60 * 1000
         w = [c for c in candles if c["t"] >= start_ms]
 
@@ -2322,11 +2349,21 @@ async def v1_features(symbol: str = "XAUUSD"):
         except Exception:
             fred_block = None
 
+        # Try GoldAPI 24h high/low if present
+        h24 = None; l24 = None
+        try:
+            gq = await cached_goldapi_quote(symbol)
+            h24 = gq.get("high")
+            l24 = gq.get("low")
+        except Exception:
+            pass
         return {
             "gapPct": gap_pct,
             "atr20x": atr20x,
             "volPct": volPct,
             "activity": activity,
+            # Keep h24/l24 for features if provided by GoldAPI
+            **({"h24": h24, "l24": l24} if (h24 is not None and l24 is not None) else {}),
             "quality": quality,
             "fresh": fresh,
             "staleSec": stale_sec,
@@ -2338,7 +2375,7 @@ async def v1_features(symbol: str = "XAUUSD"):
 
 
 @router.get("/v1/price/tick")
-async def v1_price_tick(symbol: str = "XAUUSD"):
+async def v1_price_tick(symbol: str = "XAUUSD", source: str | None = None):
     """
     Lightweight tick endpoint: returns bid/ask if available (TwelveData quote),
     otherwise synthesizes bid/ask around last. Includes freshness flag.
@@ -2348,19 +2385,26 @@ async def v1_price_tick(symbol: str = "XAUUSD"):
         bid = None
         ask = None
         last = None
-        # GoldAPI preferred
+        # Source override for diagnostics
+        async def _use_goldapi():
+            nonlocal bid, ask, last
+            gq = await cached_goldapi_quote(symbol, ttl_sec=5)
+            bid = gq.get("bid"); ask = gq.get("ask"); last = gq.get("last")
+        async def _use_td():
+            nonlocal bid, ask, last
+            q = await fetch_twelvedata_quote(symbol)
+            bid = q.get("bid"); ask = q.get("ask"); last = q.get("last")
         try:
-            gq = await cached_goldapi_quote(symbol)
-            bid = gq.get("bid")
-            ask = gq.get("ask")
-            last = gq.get("last")
+            if source == "goldapi":
+                await _use_goldapi()
+            elif source == "twelvedata":
+                await _use_td()
+            else:
+                # GoldAPI preferred
+                await _use_goldapi()
         except Exception:
-            # Fallback to TwelveData
             try:
-                q = await fetch_twelvedata_quote(symbol)
-                bid = q.get("bid")
-                ask = q.get("ask")
-                last = q.get("last")
+                await _use_td()
             except Exception:
                 pass
         if last is None and (bid is None or ask is None):
@@ -2410,7 +2454,7 @@ async def v1_price_tick(symbol: str = "XAUUSD"):
 
 
 @router.get("/v1/ohlc")
-async def v1_ohlc(symbol: str = "XAUUSD", tf: str = "1m", limit: int = 1000):
+async def v1_ohlc(symbol: str = "XAUUSD", tf: str = "1m", limit: int = 1000, source: str | None = None):
     """
     Normalized OHLC fetcher. For now, uses get_candles() and slices the tail.
     tf is accepted for compatibility (1m/5m/1h), but current implementation
@@ -2418,12 +2462,20 @@ async def v1_ohlc(symbol: str = "XAUUSD", tf: str = "1m", limit: int = 1000):
     """
     try:
         end_ms = now_utc_ms()
+        # Optional source override for diagnostics
+        if source in ("twelvedata", "dukascopy", "stooq", "alpha"):
+            os.environ["PRICE_SOURCE"] = source
         candles, _last = await get_candles(symbol)
+        if source in ("twelvedata", "dukascopy", "stooq", "alpha"):
+            os.environ["PRICE_SOURCE"] = os.getenv("PRICE_SOURCE", "auto")
         # Resample if requested (server-side) to 5m or 1h
         bars = _resample_candles(candles, tf)
         if limit and limit > 0:
             bars = bars[-limit:]
         fresh, _stale = _staleness(bars[-1]["t"] if bars else 0, end_ms, fresh_threshold_min=5)
+        from fastapi import Response
+        r = Response()
+        r.headers["Cache-Control"] = "public, max-age=30"
         return {
             "symbol": symbol,
             "tf": tf,
@@ -2530,4 +2582,46 @@ async def ws_ticks(ws: WebSocket):
             await asyncio.sleep(1.0)
     except WebSocketDisconnect:
         return
+
+
+@router.get("/v1/status")
+async def v1_status(symbol: str = "XAUUSD"):
+    """
+    Compact status snapshot for diagnostics: freshness of candles, last price,
+    bid/ask spread (pts), quality, provider flags, and timestamps.
+    """
+    try:
+        end_ms = now_utc_ms()
+        candles, last_price = await get_candles(symbol)
+        last_ts = candles[-1]["t"] if candles else 0
+        # reuse quality logic via a lightweight quote fetch
+        bid = None; ask = None; spread_pts = None
+        try:
+            q = await cached_twelvedata_quote(symbol, ttl_sec=5)
+            bid = q.get("bid"); ask = q.get("ask")
+            if bid and ask:
+                spread_pts = int(round(max(0.0, float(ask) - float(bid)) * 100))
+        except Exception:
+            pass
+        fresh, stale_sec = (False, None)
+        if last_ts:
+            fresh = (end_ms - last_ts) <= 7 * 60 * 1000
+            stale_sec = max(0, (end_ms - last_ts) // 1000)
+        quality = "OK"
+        if spread_pts is not None:
+            # same clamp thresholds as /home
+            if last_price and abs(float(spread_pts)) >= int(round(0.005 * float(last_price) * 100)):
+                spread_pts = max(21, min(30, int(round(0.003 * float(last_price) * 100))))
+            quality = "OK" if spread_pts <= 20 else ("DEGRADED" if spread_pts <= 30 else "POOR")
+        return {
+            "symbol": symbol,
+            "fresh": fresh,
+            "staleSec": stale_sec,
+            "last": last_price,
+            "spreadPts": spread_pts,
+            "quality": quality,
+            "ts": end_ms,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"status: {e}")
 
