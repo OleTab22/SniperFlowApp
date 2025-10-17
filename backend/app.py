@@ -475,12 +475,18 @@ async def fetch_stooq(symbol: str):
             dt_str = f"{row['date']} {row['time']}"
             naive = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
             aware = naive.replace(tzinfo=timezone.utc)
+            vol = None
+            try:
+                vol = float(row.get("volume")) if row.get("volume") not in (None, "") else None
+            except Exception:
+                vol = None
             candles.append({
                 "t": to_utc_ms(aware),
                 "o": float(row["open"]),
                 "h": float(row["high"]),
                 "l": float(row["low"]),
                 "c": float(row["close"]),
+                "v": vol,
             })
         except Exception:
             continue
@@ -1737,6 +1743,7 @@ async def home(nocache: bool = False):
                     cur = rv_vals[-1]
                     below_eq = len([x for x in rv_vals if x <= cur])
                     volume_percentile = int((below_eq / len(rv_vals)) * 100.0)
+                    volume_percentile = max(0, min(100, volume_percentile))
         except Exception:
             volume_percentile = None
 
@@ -1898,15 +1905,21 @@ async def home(nocache: bool = False):
         latency_ms = 0
         if spread_pts is not None:
             try:
-                # Clamp extreme spreads: if >0.5% of last price, treat as degraded
+                # Clamp extreme spreads: if >0.5% of last price, force into degraded band
                 if last_price and abs(float(spread_pts)) >= int(round(0.005 * float(last_price) * 100)):
-                    # Normalize by setting to a degraded threshold
                     spread_pts = max(21, min(30, int(round(0.003 * float(last_price) * 100))))
             except Exception:
                 pass
+            # Percent-aware classification: if spread <= 0.1% of last, treat as DEGRADED (not POOR)
+            pct_small = False
+            try:
+                if last_price and float(last_price) > 0:
+                    pct_small = ( (float(spread_pts) / 100.0) / float(last_price) ) <= 0.001  # 0.1%
+            except Exception:
+                pct_small = False
             if spread_pts <= 20 and latency_ms <= 300:
                 q_state = "OK"
-            elif spread_pts <= 30 and latency_ms <= 600:
+            elif (spread_pts <= 30 and latency_ms <= 600) or pct_small:
                 q_state = "DEGRADED"
             else:
                 q_state = "POOR"
@@ -2268,7 +2281,7 @@ async def v1_features(symbol: str = "XAUUSD"):
         start_ms = end_ms - 24 * 60 * 60 * 1000
         w = [c for c in candles if c["t"] >= start_ms]
 
-        # Gap% per spec: (today_open - prev_close)/prev_close*100 using UTC day
+        # Gap%: prefer GoldAPI open vs last close from previous UTC day
         now_utc = datetime.now(timezone.utc)
         today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         prev_midnight = today_midnight - timedelta(days=1)
@@ -2276,11 +2289,17 @@ async def v1_features(symbol: str = "XAUUSD"):
         prev_w = filter_candles(candles, to_utc_ms(prev_midnight), to_utc_ms(today_midnight))
         today_open = today_w[0]["o"] if today_w else None
         prev_close = prev_w[-1]["c"] if prev_w else None
+        try:
+            gq = await cached_goldapi_quote(symbol)
+            if gq.get("open") is not None:
+                today_open = gq.get("open")
+        except Exception:
+            pass
         gap_pct = None
         if prev_close and prev_close != 0 and today_open:
             gap_pct = (today_open - prev_close) / prev_close * 100.0
 
-        # Intraday range & ATR20 proxy
+        # Intraday range & ATR20 proxy (SAST day)
         tz_sast = pytz.timezone("Africa/Johannesburg")
         midnight_local = datetime.now(tz_sast).replace(hour=0, minute=0, second=0, microsecond=0)
         midnight_ms = int(midnight_local.astimezone(timezone.utc).timestamp() * 1000)
@@ -2309,10 +2328,31 @@ async def v1_features(symbol: str = "XAUUSD"):
         except Exception:
             activity = None
 
-        # Volume percentile via GC=F (futures) vs 20-day median-by-minute (5m cadence)
+        # Volume percentile proxy: percentile of latest 5m realized volatility vs today's distribution (same as /home)
         volPct = None
         try:
-            volPct = await _volume_percentile_gcf()
+            closes_day = [c["c"] for c in intraday]
+            if len(closes_day) >= 7:
+                def _rv5(window):
+                    rets = []
+                    for i in range(1, len(window)):
+                        a = window[i-1]
+                        b = window[i]
+                        if a:
+                            rets.append((b - a) / a)
+                    if not rets:
+                        return 0.0
+                    m = sum(rets) / len(rets)
+                    var = sum((r - m) * (r - m) for r in rets) / max(1, len(rets) - 1)
+                    return math.sqrt(var)
+                rv_vals = []
+                for i in range(5, len(closes_day)):
+                    rv_vals.append(_rv5(closes_day[i-5:i+1]))
+                if rv_vals:
+                    cur = rv_vals[-1]
+                    below_eq = len([x for x in rv_vals if x <= cur])
+                    volPct = int((below_eq / len(rv_vals)) * 100.0)
+                    volPct = max(0, min(100, volPct))
         except Exception:
             volPct = None
 
