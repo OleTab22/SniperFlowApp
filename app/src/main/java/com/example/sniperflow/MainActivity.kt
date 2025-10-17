@@ -674,8 +674,8 @@ class MainActivity : AppCompatActivity() {
                         val sign = if (v >= 0) "+" else ""
                         val valStr = String.format(Locale.getDefault(), "%.1f", v)
                         val label = DRIVER_LABEL[d.key ?: ""] ?: (d.key ?: "")
-                        // More compact format using existing resource + parentheses: "DXY +0.5 (25%)"
-                        tv.text = getString(R.string.driver_chip_text_fmt, label, sign, valStr) + " (" + contrib + ")"
+                        // Use resource with placeholders for full text including contribution
+                        tv.text = getString(R.string.driver_chip_text_full_fmt, label, sign, valStr, contrib)
                         tv.textSize = 13f
                         val color = if (v >= 0) R.color.colorPositive else R.color.colorNegative
                         tv.setTextColor(ContextCompat.getColor(this@MainActivity, color))
@@ -789,6 +789,30 @@ class MainActivity : AppCompatActivity() {
                         closes = home.price?.closes
                     )
                     saveHomeCache(cache)
+                }
+
+                // Signals: fetch latest and render
+                runCatching {
+                    val sig = RetrofitModule.api(baseUrl).signalsRecent(1).firstOrNull()
+                    val title = findViewById<TextView>(R.id.tvSigTitle)
+                    val meta = findViewById<TextView>(R.id.tvSigMeta)
+                    val reasons = findViewById<TextView>(R.id.tvSigReasons)
+                    if (sig != null) {
+                        val sym = sig.symbol ?: "XAUUSD"
+                        val side = (sig.side ?: "").uppercase()
+                        title?.text = getString(R.string.sig_title_fmt, sym, side)
+                        val entry = sig.entry?.let { String.format(Locale.getDefault(), "Entry %.2f", it) } ?: "Entry —"
+                        val sl = sig.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
+                        val conf = sig.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
+                        meta?.text = listOf(entry, sl, conf).joinToString("  •  ")
+                        val rs = (sig.reasons ?: emptyList()).take(3).mapIndexed { i, r -> "${i+1}) ${r}" }
+                        reasons?.text = rs.joinToString("  ")
+                        findViewById<MaterialButton>(R.id.btnJournalSignal)?.setOnClickListener {
+                            startActivity(Intent(this@MainActivity, JournalActivity::class.java))
+                        }
+                    } else {
+                        title?.text = "—"; meta?.text = ""; reasons?.text = ""
+                    }
                 }
 
             } catch (t: Throwable) {

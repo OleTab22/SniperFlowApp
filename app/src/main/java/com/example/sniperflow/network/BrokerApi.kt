@@ -61,6 +61,14 @@ interface BrokerApi {
     @DELETE("v1/journal/{id}")
     @Suppress("unused")
     suspend fun deleteJournal(@Path("id") id: Int): Map<String, Any>
+
+    // --- Signals / Ledger ---
+    @GET("/v1/signals/recent")
+    suspend fun signalsRecent(@Query("limit") limit: Int = 20): List<SignalDto>
+
+    @GET("/v1/metrics/ledger")
+    @Suppress("unused")
+    suspend fun metricsLedger(@Query("limit") limit: Int = 200): List<LedgerEntryDto>
 }
 
 data class JournalReq(

@@ -14,6 +14,13 @@ import com.google.android.flexbox.FlexboxLayout
 import androidx.core.content.ContextCompat
 import android.content.ActivityNotFoundException
 import androidx.core.net.toUri
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.DiffUtil
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import java.util.Locale
+import com.example.sniperflow.network.SignalDto
 
 class NotificationsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +50,7 @@ class NotificationsActivity : AppCompatActivity() {
                 val api = RetrofitModule.api(BuildConfig.BASE_URL)
                 val home = api.home()
                 val news = fetchNews()
+                val signals = runCatching { api.signalsRecent(20) }.getOrElse { emptyList() }
 
                 // News section
                 findViewById<TextView?>(R.id.tvNewsTitle)?.text = news?.items?.firstOrNull()?.title ?: "—"
@@ -83,6 +91,13 @@ class NotificationsActivity : AppCompatActivity() {
                     if (d.stale == true) tv.alpha = 0.6f
                     flex?.addView(tv)
                 }
+
+                // Signals list
+                val rv = findViewById<RecyclerView?>(R.id.rvSignals)
+                rv?.layoutManager = LinearLayoutManager(this@NotificationsActivity)
+                val adapter = SignalsAdapter()
+                rv?.adapter = adapter
+                adapter.submitList(signals)
             }
         }
     }
@@ -107,5 +122,45 @@ class NotificationsActivity : AppCompatActivity() {
 
 data class NewsItem(val title: String?, val link: String?, val ts: Long?, val src: String?)
 data class NewsResponse(val items: List<NewsItem> = emptyList())
+
+private class SignalsAdapter : RecyclerView.Adapter<SignalsAdapter.VH>() {
+    private val items = mutableListOf<SignalDto>()
+    fun submitList(list: List<SignalDto>) {
+        val old = items.toList()
+        val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = list.size
+            override fun areItemsTheSame(oPos: Int, nPos: Int): Boolean {
+                val a = old[oPos]
+                val b = list[nPos]
+                return a.id == b.id && a.ts == b.ts
+            }
+            override fun areContentsTheSame(oPos: Int, nPos: Int): Boolean = old[oPos] == list[nPos]
+        }, false)
+        items.clear(); items.addAll(list)
+        diff.dispatchUpdatesTo(this)
+    }
+
+    override fun getItemCount() = items.size
+    override fun onCreateViewHolder(p: ViewGroup, t: Int): VH {
+        val v = LayoutInflater.from(p.context).inflate(R.layout.item_signal_row, p, false)
+        return VH(v)
+    }
+    override fun onBindViewHolder(h: VH, i: Int) = h.bind(items[i])
+
+    class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
+        private val title = v.findViewById<TextView>(R.id.tvSigTitle)
+        private val meta = v.findViewById<TextView>(R.id.tvSigMeta)
+        fun bind(s: SignalDto) {
+            val sym = s.symbol ?: "XAUUSD"
+            val side = (s.side ?: "").uppercase()
+            title.text = itemView.context.getString(R.string.sig_title_fmt, sym, side)
+            val entry = s.entry?.let { String.format(Locale.getDefault(), "Entry %.2f", it) } ?: "Entry —"
+            val sl = s.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
+            val conf = s.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
+            meta.text = listOf(entry, sl, conf).joinToString("  •  ")
+        }
+    }
+}
 
 

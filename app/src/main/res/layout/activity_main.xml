@@ -566,6 +566,60 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- Signals (latest) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/signalsCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardElevation="2dp"
+            app:cardCornerRadius="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Latest Signal"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvSigTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="—" />
+
+                <TextView
+                    android:id="@+id/tvSigMeta"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textSize="12sp"
+                    android:text="" />
+
+                <TextView
+                    android:id="@+id/tvSigReasons"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text=""
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnJournalSignal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Journal this" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Economic Event Countdown -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/eventsCard"

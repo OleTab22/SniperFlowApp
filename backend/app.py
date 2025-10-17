@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+import json
 
 router = APIRouter()
 
@@ -44,6 +45,10 @@ GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
 
 _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
+
+# Lightweight in-memory signals store and websocket client registry
+_signals_store: list[dict] = []
+_signal_ws_clients: set[WebSocket] = set()
 
 
 # ----- Provider circuit breakers -----
@@ -2824,3 +2829,101 @@ async def v1_news(symbols: str | None = None, q: str | None = None, limit: int =
         return out
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"news: {e}")
+
+
+# ---------------- Signals + Ledger (MVP) ----------------
+@router.get("/v1/signals/recent")
+async def v1_signals_recent(limit: int = 20):
+    try:
+        if not _signals_store:
+            # seed a couple of demo signals
+            def _seed(side: str, entry: float):
+                now_ms = now_utc_ms()
+                sl = entry - 6.0 if side.upper() == "LONG" else entry + 6.0
+                tp1 = entry + 9.0 if side.upper() == "LONG" else entry - 9.0
+                _signals_store.append({
+                    "id": f"sig-{now_ms}-{side.lower()}",
+                    "ts": now_ms,
+                    "symbol": "XAUUSD",
+                    "side": side.upper(),
+                    "entry": float(entry),
+                    "sl": float(sl),
+                    "tp1": float(tp1),
+                    "tp2": None,
+                    "time_stop_min": 45,
+                    "confidence": 0.62,
+                    "regime": "STABLE",
+                    "reasons": ["Momentum", "Retest", "Regime OK"],
+                    "status": "OPEN",
+                })
+            _seed("LONG", 2421.2)
+            _seed("SHORT", 2434.8)
+        rows = sorted(_signals_store, key=lambda s: s.get("ts", 0), reverse=True)
+        return rows[: max(1, min(100, limit))]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"signals: {e}")
+
+
+@router.get("/v1/metrics/ledger")
+async def v1_metrics_ledger(limit: int = 200):
+    try:
+        # simple stub rows for UI wiring
+        now = now_utc_ms()
+        rows = [
+            {
+                "signal_id": "sig-demo-1",
+                "open_ts": now - 90 * 60 * 1000,
+                "close_ts": now - 12 * 60 * 1000,
+                "open_price": 2415.2,
+                "close_price": 2420.7,
+                "mae": -3.8,
+                "mfe": 9.6,
+                "outcome_r": 0.7,
+                "slippage": 1.0,
+                "spread": 20.0,
+                "reason_close": "TP1 hit",
+            },
+            {
+                "signal_id": "sig-demo-2",
+                "open_ts": now - 240 * 60 * 1000,
+                "close_ts": now - 160 * 60 * 1000,
+                "open_price": 2432.4,
+                "close_price": 2425.0,
+                "mae": -7.2,
+                "mfe": 5.1,
+                "outcome_r": -0.5,
+                "slippage": 1.4,
+                "spread": 24.0,
+                "reason_close": "Time stop",
+            },
+        ]
+        return rows[: max(1, min(500, limit))]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ledger: {e}")
+
+
+@router.websocket("/ws/signals")
+async def ws_signals(ws: WebSocket):
+    await ws.accept()
+    _signal_ws_clients.add(ws)
+    try:
+        while True:
+            # keepalive; we do not expect client messages
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _signal_ws_clients.discard(ws)
+
+
+async def _broadcast_signal(sig: dict):
+    if not _signal_ws_clients:
+        return
+    data = json.dumps(sig)
+    send_tasks = []
+    for c in list(_signal_ws_clients):
+        send_tasks.append(c.send_text(data))
+    try:
+        await asyncio.gather(*send_tasks, return_exceptions=True)
+    except Exception:
+        pass

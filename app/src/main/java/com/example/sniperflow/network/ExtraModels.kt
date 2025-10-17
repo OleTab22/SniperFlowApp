@@ -26,4 +26,35 @@ data class LockWindow(
     val end_utc: String
 )
 
+// --- Signals / Ledger (MVP) ---
+data class SignalDto(
+    val id: String?,
+    val ts: Long?,
+    val symbol: String?,
+    val side: String?,
+    val entry: Double?,
+    val sl: Double?,
+    val tp1: Double?,
+    val tp2: Double?,
+    val time_stop_min: Int?,
+    val confidence: Double?,
+    val regime: String?,
+    val reasons: List<String>?,
+    val status: String?
+)
+
+data class LedgerEntryDto(
+    val signal_id: String?,
+    val open_ts: Long?,
+    val close_ts: Long?,
+    val open_price: Double?,
+    val close_price: Double?,
+    val mae: Double?,
+    val mfe: Double?,
+    val outcome_r: Double?,
+    val slippage: Double?,
+    val spread: Double?,
+    val reason_close: String?
+)
+
 
