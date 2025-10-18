@@ -405,18 +405,8 @@ def start_calendar_sync_background():
             await asyncio.sleep(15 * 60)
     asyncio.create_task(runner())
 
-# ---------- APP ----------
-app = FastAPI(title="SniperFlow API", version="1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-# Include non-DB endpoints from backend.app (market/levels/home etc.) so one server serves all
-if data_router is not None:
-    app.include_router(data_router)
-    log.info("Mounted data app router; total routes: %d", len(app.routes))
-
-# Override /home to enrich calendar from DB using official sources (keeps provider payload intact)
-@app.get("/home")
-async def home(nocache: bool = False):
+# ---------- HOME (DB-enriched calendar) ----------
+async def home_override(nocache: bool = False):
     base = {}
     if callable(provider_home):
         try:
@@ -426,7 +416,6 @@ async def home(nocache: bool = False):
             base = {}
     if not DATABASE_URL:
         return base or {"calendar": None}
-    # Pick the next upcoming event within 72 hours; prefer importance=3
     next_evt = None
     with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(
@@ -456,6 +445,18 @@ async def home(nocache: bool = False):
         except Exception:
             pass
     return base
+
+# ---------- APP ----------
+app = FastAPI(title="SniperFlow API", version="1.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Register our /home override BEFORE mounting the router, so it takes precedence
+app.add_api_route("/home", home_override, methods=["GET"])  # type: ignore[arg-type]
+
+# Include non-DB endpoints from backend.app (market/levels/etc.) so one server serves all
+if data_router is not None:
+    app.include_router(data_router)
+    log.info("Mounted data app router; total routes: %d", len(app.routes))
 
 # WebSocket endpoint for /ticks — mirror router JSON payload {ts,bid,ask}
 @app.websocket("/ticks")
@@ -703,6 +704,12 @@ async def startup_event():
         log.info("Calendar sync started")
     except Exception as e:
         log.warning(f"Calendar sync not started: {e}")
+    # Kick one immediate sync so the UI has events on first load
+    try:
+        await sync_calendar_free()
+        log.info("Calendar sync initial pass complete")
+    except Exception as e:
+        log.warning(f"Initial calendar sync failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

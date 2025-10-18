@@ -1173,20 +1173,8 @@ async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
     except Exception:
         # fall back to stub below
         pass
-    # Fallback simple stub if DB not configured or empty
-    now_ms = now_utc_ms()
-    event_time = now_ms + 42 * 60 * 1000
-    return {
-        "next_red": {
-            "title": f"{ccy} CPI",
-            "impact": "high",
-            "time_utc": str(int(event_time // 1000)),
-            "lock_window": {
-                "start_utc": str(int((event_time - 15*60*1000) // 1000)),
-                "end_utc": str(int((event_time + 15*60*1000) // 1000)),
-            }
-        }
-    }
+    # Fallback simple empty payload if DB not configured or empty
+    return {"next_red": None}
 
 
 # ---------------- Consolidated Home Endpoint ----------------
