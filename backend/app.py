@@ -17,6 +17,7 @@ async def v1_fred_latest(series: str = "DFII10"):
         raise HTTPException(status_code=502, detail=f"fred/latest: {e}")
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import psycopg2
 import time
 import asyncio
 import httpx
@@ -1112,15 +1113,46 @@ async def ohlc_24h(symbol: str = "XAUUSD"):
 
 @router.get("/calendar/upcoming")
 async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
-    # Simple stub: an event in 42 minutes from now
+    # Prefer DB-backed official sources when available
+    try:
+        db_url = os.getenv("DATABASE_URL")
+        if db_url:
+            hrs = int(hours)
+            with psycopg2.connect(db_url) as c, c.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT title, EXTRACT(EPOCH FROM time)::bigint AS ts_sec, COALESCE(impact,'High')
+                    FROM calendar
+                    WHERE time BETWEEN now() AND now() + interval %s
+                    ORDER BY (COALESCE(importance,0) DESC), time ASC
+                    LIMIT 1
+                    """,
+                    (f"{hrs} hour",)
+                )
+                row = cur.fetchone()
+                if row:
+                    title, ts_sec, impact = row
+                    return {
+                        "next_red": {
+                            "title": str(title or ""),
+                            "impact": str(impact or "High"),
+                            "time_utc": str(int(ts_sec)),
+                            "lock_window": {
+                                "start_utc": str(int(ts_sec - 900)),
+                                "end_utc": str(int(ts_sec + 900)),
+                            }
+                        }
+                    }
+    except Exception:
+        # fall back to stub below
+        pass
+    # Fallback simple stub if DB not configured or empty
     now_ms = now_utc_ms()
-    in_ms = 42 * 60 * 1000
-    event_time = now_ms + in_ms
+    event_time = now_ms + 42 * 60 * 1000
     return {
         "next_red": {
             "title": f"{ccy} CPI",
             "impact": "high",
-            # App expects epoch seconds as a string
             "time_utc": str(int(event_time // 1000)),
             "lock_window": {
                 "start_utc": str(int((event_time - 15*60*1000) // 1000)),

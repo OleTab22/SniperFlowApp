@@ -1,15 +1,27 @@
 import os, time, logging
 import asyncio
 import httpx
+import re
 from collections import defaultdict
 import psycopg2, psycopg2.extras
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import List, Dict
 
 # Import the app router directly
 from .app import router as data_router, startup as data_startup, shutdown as data_shutdown
+try:
+    # Base consolidated payload; we'll enrich calendar from DB below
+    from .app import home as provider_home
+except Exception:
+    provider_home = None
+
+# Third-party parsing libs for free official calendars
+from icalendar import Calendar
+from bs4 import BeautifulSoup
+from dateutil import tz
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("sniperflow")
@@ -22,6 +34,7 @@ FRED_KEY = os.getenv("FRED_API_KEY")
 HEADERS = {"User-Agent": "sniperflow/1.0 (+contact)", "Accept": "application/json"}
 _CACHE: dict[str, tuple[float, object]] = {}
 _LOCKS = defaultdict(asyncio.Lock)
+SAST = tz.gettz("Africa/Johannesburg")
 
 async def _get_json(url: str, params: dict | None = None, timeout=12):
     async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as s:
@@ -121,6 +134,260 @@ def connect():
     except Exception:
         return psycopg2.connect(DATABASE_URL)
 
+# ---------------- Free, official calendar providers ----------------
+
+async def _get_text(url: str) -> str:
+    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "SniperFlow/1.0"}) as cx:
+        r = await cx.get(url)
+        r.raise_for_status()
+        return r.text
+
+def _norm_impact(s: str | None) -> str:
+    lbl = (s or "").strip().title()
+    return lbl if lbl in ("Low", "Medium", "High") else "High"
+
+def _mk_event(title: str, dt_aware: datetime, country: str, source: str,
+              url: str | None = None, category: str | None = None,
+              currency: str | None = None, importance: int = 3) -> Dict:
+    return {
+        "title": title,
+        "time": dt_aware.astimezone(timezone.utc),
+        "impact": _norm_impact("High" if importance == 3 else "Medium"),
+        "country": country,
+        "currency": currency,
+        "category": category,
+        "source": source,
+        "url": url,
+        "importance": importance,
+    }
+
+# BLS iCal
+BLS_ICS = "https://www.bls.gov/schedule/news_release/bls.ics"
+
+async def fetch_bls_ics(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    ics = await _get_text(BLS_ICS)
+    cal = Calendar.from_ical(ics)
+    out: List[Dict] = []
+    want = (
+        "Consumer Price Index",
+        "Employment Situation",
+        "Producer Price Indexes",
+        "Import and Export Price Indexes",
+        "Real Earnings",
+        "Job Openings and Labor Turnover Survey",
+    )
+    for comp in cal.walk():
+        if getattr(comp, 'name', '') != "VEVENT":
+            continue
+        summary = str(comp.get("SUMMARY") or "")
+        if not any(w in summary for w in want):
+            continue
+        dtstart = comp.decoded("DTSTART")
+        if not isinstance(dtstart, datetime):
+            continue
+        dt_utc = dtstart.astimezone(timezone.utc)
+        if not (start_utc <= dt_utc <= end_utc):
+            continue
+        url = str(comp.get("URL") or "") or "https://www.bls.gov/schedule/"
+        out.append(_mk_event(
+            title=f"US {summary}", dt_aware=dtstart, country="US", source="BLS (ICS)",
+            url=url, category=summary, currency="USD", importance=3
+        ))
+    return out
+
+# BEA schedule
+BEA_SCHEDULE = "https://www.bea.gov/news/schedule"
+_time_rx = re.compile(r"(\d{1,2}:\d{2})\s*(AM|PM)", re.I)
+
+async def fetch_bea(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    html = await _get_text(BEA_SCHEDULE)
+    soup = BeautifulSoup(html, "lxml")
+    out: List[Dict] = []
+    for li in soup.select("div.view-content div.views-row, li.views-row, div.schedule-list div.row"):
+        text = " ".join(li.get_text(" ", strip=True).split())
+        if not text:
+            continue
+        date_match = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+202\d", text)
+        if not date_match:
+            continue
+        date_str = date_match.group(0)
+        time_match = _time_rx.search(text)
+        time_str = time_match.group(0) if time_match else "8:30 AM"
+        title = text.split("  ")[0]
+        dt_naive = datetime.strptime(f"{date_str} {time_str}", "%B %d, %Y %I:%M %p")
+        dt_ny = dt_naive.replace(tzinfo=tz.gettz("America/New_York"))
+        dt_utc = dt_ny.astimezone(timezone.utc)
+        if start_utc <= dt_utc <= end_utc:
+            out.append(_mk_event(
+                title=f"US {title}", dt_aware=dt_ny, country="US", source="BEA",
+                url=BEA_SCHEDULE, category=title, currency="USD", importance=3
+            ))
+    return out
+
+# Federal Reserve (FOMC)
+FOMC_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+
+async def fetch_fomc(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    html = await _get_text(FOMC_URL)
+    soup = BeautifulSoup(html, "lxml")
+    out: List[Dict] = []
+    for li in soup.select("div#article li, table tr"):
+        t = " ".join(li.get_text(" ", strip=True).split())
+        if not t:
+            continue
+        if ("Press Conference" in t) or ("Statement" in t) or ("FOMC Meeting" in t):
+            date_match = re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+202\d", t)
+            if not date_match:
+                continue
+            date_str = date_match.group(0)
+            tm = re.search(r"(\d{1,2}:\d{2})\s*p\.m\.|(\d{1,2}:\d{2})\s*a\.m\.", t, re.I)
+            time_str = tm.group(0).replace(".", "").upper() if tm else "2:00 PM"
+            time_clean = (time_str
+                          .replace(" P M", " PM").replace(" A M", " AM")
+                          .replace("P M", " PM").replace("A M", " AM")
+                          .replace("P.M", "PM").replace("A.M", "AM"))
+            if ":" not in time_clean:
+                time_clean = "2:00 PM"
+            dt_naive = datetime.strptime(f"{date_str} {time_clean}", "%B %d, %Y %I:%M %p")
+            dt_ny = dt_naive.replace(tzinfo=tz.gettz("America/New_York"))
+            dt_utc = dt_ny.astimezone(timezone.utc)
+            if start_utc <= dt_utc <= end_utc:
+                out.append(_mk_event(
+                    title=f"US FOMC {'Press Conference' if 'Press Conference' in t else 'Statement/Meeting'}",
+                    dt_aware=dt_ny, country="US", source="Federal Reserve",
+                    url=FOMC_URL, category="FOMC", currency="USD", importance=3
+                ))
+    return out
+
+# ECB
+ECB_URL = "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+
+async def fetch_ecb(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    html = await _get_text(ECB_URL)
+    soup = BeautifulSoup(html, "lxml")
+    out: List[Dict] = []
+    for li in soup.select("main li"):
+        t = " ".join(li.get_text(" ", strip=True).split())
+        if ("Press conference" in t) or ("monetary policy meeting" in t.lower()):
+            m = re.search(r"(\d{2})/(\d{2})/(\d{4})", t)
+            if not m:
+                continue
+            d, mth, y = m.groups()
+            tm = re.search(r"(\d{1,2}:\d{2})", t)
+            time_str = tm.group(1) if tm else "14:45"
+            dt_naive = datetime.strptime(f"{y}-{mth}-{d} {time_str}", "%Y-%m-%d %H:%M")
+            dt_cet = dt_naive.replace(tzinfo=tz.gettz("Europe/Brussels"))
+            dt_utc = dt_cet.astimezone(timezone.utc)
+            if start_utc <= dt_utc <= end_utc:
+                out.append(_mk_event(
+                    title="ECB Press Conference",
+                    dt_aware=dt_cet, country="EU", source="ECB",
+                    url=ECB_URL, category="ECB Governing Council", currency="EUR", importance=3
+                ))
+    return out
+
+# Optional FRED release dates (uses free key if provided)
+FRED_RELEASES = "https://api.stlouisfed.org/fred/releases/dates"
+
+async def fetch_fred_dates(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    if not FRED_KEY:
+        return []
+    params = {
+        "api_key": FRED_KEY,
+        "file_type": "json",
+        "order_by": "release_date",
+        "sort_order": "asc",
+        "realtime_start": start_utc.date().isoformat(),
+        "realtime_end": end_utc.date().isoformat(),
+        "include_release_dates_with_no_data": "true",
+    }
+    async with httpx.AsyncClient(timeout=30) as cx:
+        r = await cx.get(FRED_RELEASES, params=params)
+        r.raise_for_status()
+        j = r.json()
+    out: List[Dict] = []
+    for rd in j.get("release_dates", []):
+        name = rd.get("release_name", "")
+        date_str = rd.get("date")
+        if not date_str:
+            continue
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        dt_ny = dt.replace(hour=8, minute=30, tzinfo=tz.gettz("America/New_York"))
+        dt_utc = dt_ny.astimezone(timezone.utc)
+        if start_utc <= dt_utc <= end_utc:
+            out.append(_mk_event(
+                title=f"US {name}", dt_aware=dt_ny, country="US",
+                source="FRED (release date)", url="https://fred.stlouisfed.org/releases/calendar",
+                category=name, currency="USD", importance=2
+            ))
+    return out
+
+def _upsert_calendar_rows(items: List[Dict]):
+    if not items or not DATABASE_URL:
+        return
+    with connect() as c, c.cursor() as cur:
+        for it in items:
+            cur.execute(
+                """
+                INSERT INTO calendar (title,time,impact,country,currency,category,actual,forecast,previous,source,url,importance)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (time, title, country) DO UPDATE SET
+                  impact=EXCLUDED.impact,
+                  category=EXCLUDED.category,
+                  actual=EXCLUDED.actual,
+                  forecast=EXCLUDED.forecast,
+                  previous=EXCLUDED.previous,
+                  source=EXCLUDED.source,
+                  url=EXCLUDED.url,
+                  importance=EXCLUDED.importance
+                """,
+                (
+                    it.get("title"), it.get("time"), it.get("impact"), it.get("country"),
+                    it.get("currency"), it.get("category"), it.get("actual"), it.get("forecast"),
+                    it.get("previous"), it.get("source"), it.get("url"), it.get("importance"),
+                )
+            )
+        c.commit()
+
+async def sync_calendar_free():
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=1)
+    end = now + timedelta(days=14)
+    tasks = [
+        fetch_bls_ics(start, end),
+        fetch_bea(start, end),
+        fetch_fomc(start, end),
+        fetch_ecb(start, end),
+        fetch_fred_dates(start, end),
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    items: List[Dict] = []
+    for r in results:
+        if isinstance(r, Exception):
+            log.warning("calendar provider failed: %s", r)
+            continue
+        items.extend(r)
+    # de-dup per minute bucket
+    seen: set[tuple] = set()
+    deduped: List[Dict] = []
+    for e in sorted(items, key=lambda x: x["time"]):
+        key = (e.get("title"), e.get("country"), e.get("time").replace(second=0, microsecond=0))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(e)
+    _upsert_calendar_rows(deduped)
+
+def start_calendar_sync_background():
+    async def runner():
+        while True:
+            try:
+                await sync_calendar_free()
+            except Exception as e:
+                log.warning("calendar sync failed: %s", e)
+            await asyncio.sleep(15 * 60)
+    asyncio.create_task(runner())
+
 # ---------- APP ----------
 app = FastAPI(title="SniperFlow API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -129,6 +396,49 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 if data_router is not None:
     app.include_router(data_router)
     log.info("Mounted data app router; total routes: %d", len(app.routes))
+
+# Override /home to enrich calendar from DB using official sources (keeps provider payload intact)
+@app.get("/home")
+async def home(nocache: bool = False):
+    base = {}
+    if callable(provider_home):
+        try:
+            base = await provider_home(nocache=nocache)  # type: ignore
+        except Exception as e:
+            log.warning("provider home failed: %s", e)
+            base = {}
+    if not DATABASE_URL:
+        return base or {"calendar": None}
+    # Pick the next upcoming event within 72 hours; prefer importance=3
+    next_evt = None
+    with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            """
+            SELECT title,time,impact,country,currency,category,source,url,importance
+            FROM calendar
+            WHERE time BETWEEN now() AND now() + interval '72 hour'
+            ORDER BY (COALESCE(importance,0) DESC), time ASC
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if row:
+            t_ms = int(row[1].timestamp() * 1000)
+            lock_start = int(((row[1] - timedelta(minutes=15)).timestamp()))
+            lock_end = int(((row[1] + timedelta(minutes=15)).timestamp()))
+            next_evt = {
+                "title": str(row[0] or ""),
+                "impact": (row[2] or "High"),
+                "time_utc": str(int(t_ms // 1000)),
+                "lock_window": {"start_utc": str(lock_start), "end_utc": str(lock_end)},
+            }
+    if next_evt:
+        try:
+            base = dict(base) if isinstance(base, dict) else {}
+            base["calendar"] = {"next_red": next_evt}
+        except Exception:
+            pass
+    return base
 
 # WebSocket endpoint for /ticks — mirror router JSON payload {ts,bid,ask}
 @app.websocket("/ticks")
@@ -240,6 +550,16 @@ def migrate_once():
                 );
                 """
             )
+            # Calendar optional columns for richer metadata (idempotent)
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS country TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS currency TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS category TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS actual TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS forecast TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS previous TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS source TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS url TEXT;")
+            cur.execute("ALTER TABLE calendar ADD COLUMN IF NOT EXISTS importance INTEGER;")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS journal(
@@ -271,6 +591,18 @@ def migrate_once():
 
             # Indexes (safe to repeat)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar(time);")
+            # Upsert key for (time,title,country)
+            cur.execute(
+                """
+                DO $$ BEGIN
+                IF NOT EXISTS (
+                  SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='calendar_unique_idx'
+                ) THEN
+                  CREATE UNIQUE INDEX calendar_unique_idx ON calendar(time, COALESCE(title,''), COALESCE(country,''));
+                END IF;
+                END $$;
+                """
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
             # Support upsert via (user_id, client_local_id) to avoid cross-user collisions
             # Create a unique index first (version-safe), then attach it as a constraint if missing
@@ -328,6 +660,12 @@ async def startup_event():
         log.info("ML data collector started")
     except Exception as e:
         log.warning(f"ML collector not started: {e}")
+    # Start free official calendar sync
+    try:
+        start_calendar_sync_background()
+        log.info("Calendar sync started")
+    except Exception as e:
+        log.warning(f"Calendar sync not started: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
