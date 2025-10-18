@@ -69,6 +69,10 @@ interface BrokerApi {
     @GET("/v1/metrics/ledger")
     @Suppress("unused")
     suspend fun metricsLedger(@Query("limit") limit: Int = 200): List<LedgerEntryDto>
+
+    // --- Pro signals (institutional-lite) ---
+    @GET("/v1/signals/pro/last")
+    suspend fun proSignalLast(): ProSignalLast
 }
 
 data class JournalReq(
@@ -119,6 +123,26 @@ data class V1LevelsToday(
     val PDH: Double?,
     val PDL: Double?,
     val ts: Long?
+)
+
+// --- Pro signal payloads ---
+data class ProSignalLast(
+    val enabled: Boolean?,
+    val signal: ProSignal?,
+)
+
+data class ProSignal(
+    val id: String?,
+    val ts: Long?,
+    val symbol: String?,
+    val side: String?,
+    val entry: Double?,
+    val sl: Double?,
+    val tp1: Double?,
+    val tp2: Double?,
+    val confidence: Double?,
+    val regime: String?,
+    val reason: String? = null
 )
 
 

@@ -137,24 +137,7 @@ def connect():
 # ---------------- Free, official calendar providers ----------------
 
 async def _get_text(url: str) -> str:
-    # Use a browser-like UA and accept headers; some official sites block generic bots
-    base_headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-    }
-    headers = dict(base_headers)
-    if url.endswith(".ics"):
-        headers.update({
-            "Accept": "text/calendar, text/plain; q=0.9, */*; q=0.8",
-            "Referer": "https://www.bls.gov/",
-        })
-    async with httpx.AsyncClient(timeout=30, headers=headers) as cx:
+    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "SniperFlow/1.0"}) as cx:
         r = await cx.get(url)
         r.raise_for_status()
         return r.text
@@ -405,8 +388,18 @@ def start_calendar_sync_background():
             await asyncio.sleep(15 * 60)
     asyncio.create_task(runner())
 
-# ---------- HOME (DB-enriched calendar) ----------
-async def home_override(nocache: bool = False):
+# ---------- APP ----------
+app = FastAPI(title="SniperFlow API", version="1.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Include non-DB endpoints from backend.app (market/levels/home etc.) so one server serves all
+if data_router is not None:
+    app.include_router(data_router)
+    log.info("Mounted data app router; total routes: %d", len(app.routes))
+
+# Override /home to enrich calendar from DB using official sources (keeps provider payload intact)
+@app.get("/home")
+async def home(nocache: bool = False):
     base = {}
     if callable(provider_home):
         try:
@@ -416,6 +409,7 @@ async def home_override(nocache: bool = False):
             base = {}
     if not DATABASE_URL:
         return base or {"calendar": None}
+    # Pick the next upcoming event within 72 hours; prefer importance=3
     next_evt = None
     with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(
@@ -423,7 +417,7 @@ async def home_override(nocache: bool = False):
             SELECT title,time,impact,country,currency,category,source,url,importance
             FROM calendar
             WHERE time BETWEEN now() AND now() + interval '72 hour'
-            ORDER BY COALESCE(importance,0) DESC NULLS LAST, time ASC
+            ORDER BY (COALESCE(importance,0) DESC), time ASC
             LIMIT 1
             """
         )
@@ -445,18 +439,6 @@ async def home_override(nocache: bool = False):
         except Exception:
             pass
     return base
-
-# ---------- APP ----------
-app = FastAPI(title="SniperFlow API", version="1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-# Register our /home override BEFORE mounting the router, so it takes precedence
-app.add_api_route("/home", home_override, methods=["GET"])  # type: ignore[arg-type]
-
-# Include non-DB endpoints from backend.app (market/levels/etc.) so one server serves all
-if data_router is not None:
-    app.include_router(data_router)
-    log.info("Mounted data app router; total routes: %d", len(app.routes))
 
 # WebSocket endpoint for /ticks — mirror router JSON payload {ts,bid,ask}
 @app.websocket("/ticks")
@@ -621,26 +603,6 @@ def migrate_once():
                 END $$;
                 """
             )
-            # Also ensure a true UNIQUE CONSTRAINT on (time,title,country) for ON CONFLICT
-            cur.execute("SELECT 1 FROM pg_constraint WHERE conname = 'uq_calendar_ttc'")
-            if cur.fetchone() is None:
-                try:
-                    cur.execute("ALTER TABLE calendar ADD CONSTRAINT uq_calendar_ttc UNIQUE (time, title, country);")
-                except Exception:
-                    # If nulls prevent constraint creation, fall back to using the index as a constraint name
-                    # by creating a unique index then binding it
-                    cur.execute(
-                        """
-                        DO $$ BEGIN
-                        IF NOT EXISTS (
-                          SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='calendar_ttc_idx'
-                        ) THEN
-                          CREATE UNIQUE INDEX calendar_ttc_idx ON calendar(time, title, country);
-                        END IF;
-                        END $$;
-                        """
-                    )
-                    cur.execute("ALTER TABLE calendar ADD CONSTRAINT uq_calendar_ttc UNIQUE USING INDEX calendar_ttc_idx;")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
             # Support upsert via (user_id, client_local_id) to avoid cross-user collisions
             # Create a unique index first (version-safe), then attach it as a constraint if missing
@@ -704,12 +666,6 @@ async def startup_event():
         log.info("Calendar sync started")
     except Exception as e:
         log.warning(f"Calendar sync not started: {e}")
-    # Kick one immediate sync so the UI has events on first load
-    try:
-        await sync_calendar_free()
-        log.info("Calendar sync initial pass complete")
-    except Exception as e:
-        log.warning(f"Initial calendar sync failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

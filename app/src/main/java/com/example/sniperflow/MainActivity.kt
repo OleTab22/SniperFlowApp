@@ -791,27 +791,50 @@ class MainActivity : AppCompatActivity() {
                     saveHomeCache(cache)
                 }
 
-                // Signals: fetch latest and render
+                // Signals: prefer Pro (institutional-lite) signal; fallback to recent
                 runCatching {
-                    val sig = RetrofitModule.api(baseUrl).signalsRecent(1).firstOrNull()
+                    val apiSvc = RetrofitModule.api(baseUrl)
+                    val pro = runCatching { apiSvc.proSignalLast() }.getOrNull()
                     val title = findViewById<TextView>(R.id.tvSigTitle)
                     val meta = findViewById<TextView>(R.id.tvSigMeta)
                     val reasons = findViewById<TextView>(R.id.tvSigReasons)
-                    if (sig != null) {
-                        val sym = sig.symbol ?: "XAUUSD"
-                        val side = (sig.side ?: "").uppercase()
+
+                    val used = if (pro?.enabled == true && pro.signal != null) {
+                        // Render Pro signal
+                        val ps = pro.signal
+                        val sym = ps.symbol ?: "XAUUSD"
+                        val side = (ps.side ?: "").uppercase()
                         title?.text = getString(R.string.sig_title_fmt, sym, side)
-                        val entry = sig.entry?.let { String.format(Locale.getDefault(), "Entry %.2f", it) } ?: "Entry —"
-                        val sl = sig.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
-                        val conf = sig.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
-                        meta?.text = listOf(entry, sl, conf).joinToString("  •  ")
-                        val rs = (sig.reasons ?: emptyList()).take(3).mapIndexed { i, r -> "${i+1}) ${r}" }
-                        reasons?.text = rs.joinToString("  ")
-                        findViewById<MaterialButton>(R.id.btnJournalSignal)?.setOnClickListener {
-                            startActivity(Intent(this@MainActivity, JournalActivity::class.java))
+                        val entry = ps.entry?.let { String.format(Locale.getDefault(), "Entry %.2f", it) } ?: "Entry —"
+                        val sl = ps.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
+                        val conf = ps.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
+                        meta?.text = listOf("Pro", entry, sl, conf).joinToString("  •  ")
+                        val tp1 = ps.tp1?.let { String.format(Locale.getDefault(), "TP1 %.2f", it) }
+                        val tp2 = ps.tp2?.let { String.format(Locale.getDefault(), "TP2 %.2f", it) }
+                        val rs = listOfNotNull(tp1, tp2, ps.reason).take(3)
+                        reasons?.text = rs.joinToString("  •  ")
+                        true
+                    } else false
+
+                    if (!used) {
+                        val sig = runCatching { apiSvc.signalsRecent(1).firstOrNull() }.getOrNull()
+                        if (sig != null) {
+                            val sym = sig.symbol ?: "XAUUSD"
+                            val side = (sig.side ?: "").uppercase()
+                            title?.text = getString(R.string.sig_title_fmt, sym, side)
+                            val entry = sig.entry?.let { String.format(Locale.getDefault(), "Entry %.2f", it) } ?: "Entry —"
+                            val sl = sig.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
+                            val conf = sig.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
+                            meta?.text = listOf(entry, sl, conf).joinToString("  •  ")
+                            val rs = (sig.reasons ?: emptyList()).take(3).mapIndexed { i, r -> "${i+1}) ${r}" }
+                            reasons?.text = rs.joinToString("  ")
+                        } else {
+                            title?.text = "—"; meta?.text = ""; reasons?.text = ""
                         }
-                    } else {
-                        title?.text = "—"; meta?.text = ""; reasons?.text = ""
+                    }
+
+                    findViewById<MaterialButton>(R.id.btnJournalSignal)?.setOnClickListener {
+                        startActivity(Intent(this@MainActivity, JournalActivity::class.java))
                     }
                 }
 

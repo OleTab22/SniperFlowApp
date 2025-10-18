@@ -52,6 +52,32 @@ class NotificationsActivity : AppCompatActivity() {
                 val news = fetchNews()
                 val signals = runCatching { api.signalsRecent(20) }.getOrElse { emptyList() }
 
+                // Pro signal header (institutional-lite)
+                runCatching { api.proSignalLast() }.onSuccess { pro ->
+                    val title = findViewById<TextView?>(R.id.tvProSigTitle)
+                    val meta = findViewById<TextView?>(R.id.tvProSigMeta)
+                    val reason = findViewById<TextView?>(R.id.tvProSigReason)
+                    if (pro.enabled == true && pro.signal != null) {
+                        val s = pro.signal
+                        val sym = s.symbol ?: "XAUUSD"
+                        val side = (s.side ?: "").uppercase()
+                        title?.text = getString(R.string.sig_title_fmt, sym, side)
+                        val entry = s.entry?.let { String.format(Locale.getDefault(), "Entry %.2f", it) } ?: "Entry —"
+                        val sl = s.sl?.let { String.format(Locale.getDefault(), "SL %.2f", it) } ?: "SL —"
+                        val conf = s.confidence?.let { String.format(Locale.getDefault(), "Conf %.0f%%", it * 100) } ?: "Conf —"
+                        meta?.text = listOf("Pro", entry, sl, conf).joinToString("  •  ")
+                        val tp1 = s.tp1?.let { String.format(Locale.getDefault(), "TP1 %.2f", it) }
+                        val tp2 = s.tp2?.let { String.format(Locale.getDefault(), "TP2 %.2f", it) }
+                        val rs = listOfNotNull(tp1, tp2, s.reason).take(3)
+                        reason?.text = rs.joinToString("  •  ")
+                    } else {
+                        // Clear when not available
+                        title?.text = ""
+                        meta?.text = ""
+                        reason?.text = ""
+                    }
+                }
+
                 // News section
                 findViewById<TextView?>(R.id.tvNewsTitle)?.text = news?.items?.firstOrNull()?.title ?: "—"
                 findViewById<TextView?>(R.id.tvNewsMeta)?.text = news?.items?.firstOrNull()?.src ?: ""
