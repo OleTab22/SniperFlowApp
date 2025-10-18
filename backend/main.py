@@ -320,6 +320,14 @@ async def startup_event():
             wait = 2 ** i
             log.warning("Migration attempt %s failed: %s (retrying in %ss)", i+1, e, wait)
             await asyncio.sleep(wait)
+    
+    # Start ML data collector in background
+    try:
+        from .ml_collector import start_background_collector
+        start_background_collector()
+        log.info("ML data collector started")
+    except Exception as e:
+        log.warning(f"ML collector not started: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

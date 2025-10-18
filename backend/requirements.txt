@@ -5,3 +5,4 @@ pytz==2024.1
 psycopg2-binary==2.9.9
 python-dateutil==2.9.0.post0
 
+onnxruntime

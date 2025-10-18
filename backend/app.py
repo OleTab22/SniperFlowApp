@@ -1404,6 +1404,104 @@ async def v1_alerts(since: Optional[int] = None):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"alerts: {e}")
 
+# ------- ML feature builder (uses the same values /home already computes) -------
+
+def _from_drivers(drivers: list[dict], key: str, default: float = 0.0) -> float:
+    for d in drivers:
+        if d.get("key") == key:
+            try:
+                return float(d.get("value", default) or default)
+            except Exception:
+                return default
+    return default
+
+
+def _driver_freshness_map(drivers: list[dict]) -> dict[str, float]:
+    m: dict[str, float] = {}
+    for d in drivers:
+        k = d.get("key")
+        st = d.get("stale", True)
+        # encode staleness as 0/1 freshness feature
+        if k:
+            m[f"{k}_fresh"] = 0.0 if st else 1.0
+    return m
+
+
+def _one_hot_session(sess: str | None) -> dict[str, float]:
+    s = (sess or "").lower()
+    return {
+        "sess_asia":    1.0 if s == "asia"    else 0.0,
+        "sess_london":  1.0 if s == "london"  else 0.0,
+        "sess_newyork": 1.0 if s == "newyork" else 0.0,
+        "sess_off":     1.0 if s in ("", "none", "null") or s not in ("asia","london","newyork") else 0.0,
+    }
+
+
+def _quality_bucket(state: str | None) -> dict[str, float]:
+    s = (state or "").upper()
+    return {
+        "q_ok":        1.0 if s == "OK"        else 0.0,
+        "q_degraded":  1.0 if s == "DEGRADED"  else 0.0,
+        "q_poor":      1.0 if s == "POOR"      else 0.0,
+    }
+
+
+def _safe_float(x, d=None):
+    try:
+        return float(x) if x is not None else (0.0 if d is None else d)
+    except Exception:
+        return 0.0 if d is None else d
+
+
+def _build_ml_features_from_home_payload(home_payload: dict) -> dict:
+    """
+    Pulls everything we need from the SAME structures /home assembled.
+    """
+    price     = home_payload.get("price", {})
+    metrics   = home_payload.get("metrics", {})
+    quality   = home_payload.get("quality", {})
+    sessions  = home_payload.get("sessions", {})
+    gates     = home_payload.get("gates", {})
+    nowcast_m = metrics.get("nowcast", {}) or {}
+    drivers   = nowcast_m.get("drivers", []) or []
+
+    # Core drivers (already sign-aligned in /home)
+    dxy_z   = _from_drivers(drivers, "dxyZ", 0.0)
+    real_z  = _from_drivers(drivers, "realZ", 0.0)
+    vix_z   = _from_drivers(drivers, "vixZ", 0.0)
+    risk_z  = _from_drivers(drivers, "risk_on", 0.0)
+    nom_z   = _from_drivers(drivers, "nominalZ", 0.0)
+    do_ctx  = _from_drivers(drivers, "do_ctx", 0.0)
+    mom     = _from_drivers(drivers, "mom", 0.0)
+
+    # Intraday structure & hygiene
+    feat = {
+        "dxy_z":     _safe_float(dxy_z),
+        "real_z":    _safe_float(real_z),
+        "vix_z":     _safe_float(vix_z),
+        "risk_z":    _safe_float(risk_z),
+        "nom_z":     _safe_float(nom_z),
+        "do_ctx":    _safe_float(do_ctx),
+        "mom":       _safe_float(mom),
+        "range_to_atr20": _safe_float(metrics.get("range_to_atr20")),
+        "activity":       _safe_float(metrics.get("activity_index")),
+        "vol_pct":        _safe_float(metrics.get("volume_percentile")),
+        "spread_pts":     _safe_float(quality.get("spread_pts")),
+        "news_lock":      1.0 if bool(gates.get("news_lock")) else 0.0,
+        "gap_pct":        _safe_float(metrics.get("gap_pct") or 0.0),
+        # (optional) 24h change if present
+        "pct24h":         _safe_float(price.get("pct24h")),
+    }
+
+    # freshness one-hots for chips
+    feat.update(_driver_freshness_map(drivers))
+    # session one-hots
+    feat.update(_one_hot_session(sessions.get("current")))
+    # quality buckets
+    feat.update(_quality_bucket(quality.get("state")))
+
+    return feat
+
 @router.get("/home")
 async def home(nocache: bool = False):
     # Short-lived cache for consolidated payload to save upstream quotas
@@ -2005,6 +2103,52 @@ async def home(nocache: bool = False):
         except Exception:
             pass
 
+        # --------- NOWCAST: prefer ML if available, else fallback to heuristic ----------
+        nowcast_obj = None
+        try:
+            _home_partial = {
+                "price": {"pct24h": pct_day},
+                "metrics": {
+                    "gap_pct": ((last_price - do_price) / do_price * 100.0) if (do_price and do_price != 0) else None,
+                    "range_to_atr20": range_to_atr20,
+                    "activity_index": activity_index,
+                    "volume_percentile": volume_percentile,
+                    "nowcast": {
+                        "drivers": drivers + [{"key": "mom", "value": mom}],
+                    },
+                },
+                "quality": {"state": q_state, "spread_pts": spread_pts},
+                "gates": {"news_lock": news_lock},
+                "sessions": {"current": current_session},
+            }
+            feats = _build_ml_features_from_home_payload(_home_partial)
+            try:
+                from .ml_engine import predict_proba, available  # type: ignore
+            except Exception:
+                from ml_engine import predict_proba, available  # type: ignore
+            ml_prob = predict_proba(feats) if available() else None
+        except Exception:
+            ml_prob = None
+        if ml_prob is not None:
+            p = float(ml_prob)
+            nowcast_obj = {
+                "direction": "bull" if p >= 0.5 else "bear",
+                "confidence": abs(p - 0.5) * 2.0,
+                "window_min": 60,
+                "drivers": drivers + [{"key": "mom", "value": mom}],
+                "model_id": "ml-onnx-001",
+                "updated_at": end_ms,
+            }
+        else:
+            nowcast_obj = {
+                "direction": direction,
+                "confidence": confidence,
+                "window_min": 60,
+                "drivers": drivers + [{"key": "mom", "value": mom}],
+                "model_id": "stub-000",
+                "updated_at": end_ms,
+            }
+
         payload = {
             "price": {
                 "last": last_price,
@@ -2031,14 +2175,7 @@ async def home(nocache: bool = False):
                 "range_to_atr20": range_to_atr20,
                 "volume_percentile": volume_percentile,
                 "activity_index": activity_index,
-                "nowcast": {
-                    "direction": direction,
-                    "confidence": confidence,
-                    "window_min": 60,
-                    "drivers": drivers + [{"key": "mom", "value": mom}],
-                    "model_id": "stub-000",
-                    "updated_at": end_ms,
-                },
+                "nowcast": nowcast_obj,
             },
             "calendar": {"next_red": cal.get("next_red")} if isinstance(cal, dict) else {},
             "sessions": {"overlap_with_ny": (8 <= ny_now().hour < 12), "current": current_session},
@@ -2277,6 +2414,66 @@ async def v1_nowcast(nocache: bool = False):
             drv = await _compute_drivers_payload()
             if not nocache:
                 _cache[key] = (now_utc_ms(), drv)
+        # Try ML first by building features from a lightweight home-like snapshot
+        try:
+            drivers_list = []
+            for k, d in drv.items():
+                if k == "dxy":
+                    key_id = "dxyZ"
+                elif k == "real10y":
+                    key_id = "realZ"
+                elif k == "vix":
+                    key_id = "vixZ"
+                elif k == "risk_on":
+                    key_id = "risk_on"
+                elif k == "nominal10y":
+                    key_id = "nominalZ"
+                elif k == "do_ctx":
+                    key_id = "do_ctx"
+                else:
+                    key_id = None
+                if key_id is not None:
+                    drivers_list.append({
+                        "key": key_id,
+                        "value": d.get("z", 0.0),
+                        "stale": not d.get("fresh", False)
+                    })
+            # add simple momentum proxy (optional)
+            drivers_list.append({"key": "mom", "value": 0.0})
+
+            snapshot = {
+                "price": {"pct24h": None},
+                "metrics": {
+                    "gap_pct": None,
+                    "range_to_atr20": None,
+                    "activity_index": None,
+                    "volume_percentile": None,
+                    "nowcast": {"drivers": drivers_list},
+                },
+                "quality": {"state": "OK", "spread_pts": None},
+                "gates": {"news_lock": False},
+                "sessions": {"current": None},
+            }
+            feats = _build_ml_features_from_home_payload(snapshot)
+            try:
+                from .ml_engine import predict_proba, available  # type: ignore
+            except Exception:
+                from ml_engine import predict_proba, available  # type: ignore
+            p = predict_proba(feats) if available() else None
+            if p is not None:
+                score = int(round(max(-1.0, min(1.0, (float(p) - 0.5) * 2.0)) * 100))
+                flat = []
+                for _k, _d in drv.items():
+                    flat.append({
+                        "id": _k,
+                        "z": _d.get("z", 0.0),
+                        "w": _d.get("w", 0.0),
+                        "fresh": _d.get("fresh", False),
+                        "staleSec": _d.get("staleSec"),
+                    })
+                return {"score": score, "prob_up": float(p), "drivers": flat, "ts": now_utc_ms()}
+        except Exception:
+            pass
         # Apply staleness decay: w' = w * exp(-staleSec / tau)
         import math as _m
         try:
@@ -2962,7 +3159,7 @@ async def _latest_mid(symbol: str = "XAUUSD") -> tuple[float | None, int | None]
 
 
 async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
-    """Build a signal from current drivers and price. Uses nowcast-style weights with logistic mapping."""
+    """Build a higher-quality signal for XAUUSD using fresh drivers, intraday ATR, and quality gating."""
     try:
         # Drivers and weights
         drivers = await _compute_drivers_payload()
@@ -3001,7 +3198,14 @@ async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
         except Exception:
             p_up = 0.5
 
-        side = "LONG" if p_up >= 0.55 else ("SHORT" if p_up <= 0.45 else None)
+        # Confidence caps: degrade when any key drivers stale
+        stale_keys = [dz, rz, vz, mom, rk]
+        any_stale = any(k.get("fresh") is False for k in stale_keys)
+        if any_stale:
+            # pull towards neutral if stale
+            p_up = 0.5 + (p_up - 0.5) * 0.8
+
+        side = "LONG" if p_up >= 0.58 else ("SHORT" if p_up <= 0.42 else None)
         if side is None:
             return None  # no edge
 
@@ -3009,18 +3213,54 @@ async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
         if last is None:
             return None
 
-        atr_proxy = max(0.1, 0.01 * float(last))  # ~1% of price as ATR20 proxy
-        sl_dist = 0.6 * atr_proxy
-        tp1_dist = 1.0 * atr_proxy
+        # Quality gate using spread; clamp confidence when degraded
+        if spread_pts is not None and spread_pts > 30:
+            p_up = 0.5 + (p_up - 0.5) * 0.6
+            if spread_pts > 60:
+                return None  # too wide to act
+
+        # Intraday ATR20 from 1m candles when available; fallback to proxy
+        atr20 = None
+        try:
+            candles, _ = await get_candles(symbol)
+            atr20 = _wilder_atr20_from_ohlc1m(candles)
+        except Exception:
+            atr20 = None
+        if atr20 is None or atr20 <= 0:
+            atr20 = max(0.1, 0.008 * float(last))  # ~0.8% fallback
+
+        sl_dist = 0.75 * atr20
+        tp1_dist = 1.2 * atr20
         entry = float(last)
         if side == "LONG":
             sl = entry - sl_dist
             tp1 = entry + tp1_dist
-            tp2 = entry + 1.5 * atr_proxy
+            tp2 = entry + 1.8 * atr20
         else:
             sl = entry + sl_dist
             tp1 = entry - tp1_dist
-            tp2 = entry - 1.5 * atr_proxy
+            tp2 = entry - 1.8 * atr20
+
+        # Session context (prefer London/NY)
+        session_hint = None
+        try:
+            anchor = session_day_anchor(ny_now())
+            sydney, tokyo, london, newyork = build_sessions_windows(anchor)
+            now_ms = now_utc_ms()
+            if london[0] <= now_ms < london[1]:
+                session_hint = "London"
+            elif newyork[0] <= now_ms < newyork[1]:
+                session_hint = "New York"
+            elif tokyo[0] <= now_ms < tokyo[1]:
+                session_hint = "Asia"
+            else:
+                session_hint = "Off"
+            # trim target distances in Asia
+            if session_hint == "Asia":
+                tp1 = entry + (tp1 - entry) * (0.85 if side == "LONG" else 1.0)
+                tp1 = entry - (entry - tp1) * (0.85 if side == "SHORT" else 1.0)
+        except Exception:
+            session_hint = None
 
         # Build contributions and reasons
         contribs = [
@@ -3039,6 +3279,10 @@ async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
                 reasons.append(f"{lbl} {('' if c>=0 else '')}{round(c,2)}{' (stale)' if not fr else ''}")
             except Exception:
                 reasons.append(lbl)
+        if session_hint:
+            reasons.append(f"Session {session_hint}")
+        if spread_pts is not None:
+            reasons.append(f"Spread {spread_pts}pt")
 
         sig = {
             "id": f"sig-{now_utc_ms()}-{side.lower()}",

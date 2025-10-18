@@ -1,7 +1,7 @@
 services:
   - type: web
     name: sniperflow-backend
-    env: python
+    runtime: python
     region: oregon
     plan: free
     buildCommand: pip install -r backend/requirements.txt
@@ -24,6 +24,9 @@ services:
         generateValue: true
       - key: GOLDAPI_KEY
         generateValue: true
+      # ML Collection (optional: adjust interval)
+      - key: ML_COLLECTION_INTERVAL
+        value: 300  # seconds (5 minutes)
     healthCheckPath: /v1/health
     autoDeploy: true
 

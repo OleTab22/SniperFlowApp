@@ -1,0 +1,10 @@
+[
+  "dxy_z","real_z","vix_z","risk_z","nom_z","do_ctx","mom",
+  "range_to_atr20","activity","vol_pct","spread_pts","news_lock",
+  "gap_pct","pct24h",
+  "sess_asia","sess_london","sess_newyork","sess_off",
+  "q_ok","q_degraded","q_poor",
+  "dxyZ_fresh","realZ_fresh","vixZ_fresh","risk_on_fresh","nominalZ_fresh","do_ctx_fresh","mom_fresh"
+]
+
+
