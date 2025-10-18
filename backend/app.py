@@ -88,6 +88,17 @@ def _is_yf_blocked() -> bool:
 def _block_yf(minutes: int = 45):
     _cache[_yf_block_key()] = (now_utc_ms() + minutes * 60 * 1000, True)
 
+# ----- GoldAPI circuit breaker -----
+def _gapi_block_key():
+    return ("gapi_blocked", "X")
+
+def _is_gapi_blocked() -> bool:
+    hit = _cache.get(_gapi_block_key())
+    return bool(hit and now_utc_ms() < hit[0])
+
+def _block_gapi(minutes: int = 60):
+    _cache[_gapi_block_key()] = (now_utc_ms() + minutes * 60 * 1000, True)
+
 
 # ----- Day cache helpers -----
 def _next_utc_midnight_ms(buffer_min: int = 5) -> int:
@@ -108,11 +119,13 @@ async def levels_today_cached(symbol: str) -> Optional[dict]:
         prev_levels = await stooq_daily_pdh_pdl(symbol)
         # DO priority: GoldAPI open -> candles -> Stooq daily open
         do_price = None
-        try:
-            gq = await cached_goldapi_quote(symbol)
-            do_price = gq.get("open") if gq else None
-        except Exception:
-            pass
+        if GOLDAPI_KEY:
+            try:
+                gq = await cached_goldapi_quote(symbol)
+                do_price = gq.get("open") if gq else None
+            except Exception:
+                # Skip GoldAPI when unavailable (e.g., 403) and fall back
+                pass
         if do_price is None:
             try:
                 candles, _last = await get_candles(symbol)
@@ -723,6 +736,8 @@ async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
     """GoldAPI realtime quote for XAU/USD. Returns {bid, ask, last, open}."""
     if not GOLDAPI_KEY:
         raise RuntimeError("GoldAPI key missing")
+    if _is_gapi_blocked():
+        raise RuntimeError("GoldAPI temporarily blocked due to previous 403")
     pair = symbol.upper()
     if pair == "XAUUSD":
         path = "XAU/USD"
@@ -732,8 +747,20 @@ async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
         else:
             path = pair.replace("_", "/")
     url = f"{GOLDAPI_BASE}/{path}"
-    headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
+    headers = {
+        "x-access-token": GOLDAPI_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "SniperFlow/1.0 (+backend)"
+    }
     r = await _client.get(url, headers=headers, timeout=10)
+    if r.status_code in (401, 403):
+        try:
+            logging.warning("GoldAPI %s: %s", r.status_code, r.text)
+        except Exception:
+            pass
+        _block_gapi(60)
+        raise RuntimeError(f"GoldAPI {r.status_code}")
     r.raise_for_status()
     j = r.json()
     def _to_f(v):

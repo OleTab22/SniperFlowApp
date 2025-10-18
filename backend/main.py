@@ -137,7 +137,24 @@ def connect():
 # ---------------- Free, official calendar providers ----------------
 
 async def _get_text(url: str) -> str:
-    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "SniperFlow/1.0"}) as cx:
+    # Use a browser-like UA and accept headers; some official sites block generic bots
+    base_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    headers = dict(base_headers)
+    if url.endswith(".ics"):
+        headers.update({
+            "Accept": "text/calendar, text/plain; q=0.9, */*; q=0.8",
+            "Referer": "https://www.bls.gov/",
+        })
+    async with httpx.AsyncClient(timeout=30, headers=headers) as cx:
         r = await cx.get(url)
         r.raise_for_status()
         return r.text
@@ -603,6 +620,26 @@ def migrate_once():
                 END $$;
                 """
             )
+            # Also ensure a true UNIQUE CONSTRAINT on (time,title,country) for ON CONFLICT
+            cur.execute("SELECT 1 FROM pg_constraint WHERE conname = 'uq_calendar_ttc'")
+            if cur.fetchone() is None:
+                try:
+                    cur.execute("ALTER TABLE calendar ADD CONSTRAINT uq_calendar_ttc UNIQUE (time, title, country);")
+                except Exception:
+                    # If nulls prevent constraint creation, fall back to using the index as a constraint name
+                    # by creating a unique index then binding it
+                    cur.execute(
+                        """
+                        DO $$ BEGIN
+                        IF NOT EXISTS (
+                          SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='calendar_ttc_idx'
+                        ) THEN
+                          CREATE UNIQUE INDEX calendar_ttc_idx ON calendar(time, title, country);
+                        END IF;
+                        END $$;
+                        """
+                    )
+                    cur.execute("ALTER TABLE calendar ADD CONSTRAINT uq_calendar_ttc UNIQUE USING INDEX calendar_ttc_idx;")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(timestamp DESC);")
             # Support upsert via (user_id, client_local_id) to avoid cross-user collisions
             # Create a unique index first (version-safe), then attach it as a constraint if missing
