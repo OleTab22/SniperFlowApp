@@ -101,6 +101,18 @@ def _block_yf(minutes: int = 45):
     _cache[_yf_block_key()] = (now_utc_ms() + minutes * 60 * 1000, True)
 
 
+# ----- GoldAPI circuit breaker -----
+def _gapi_block_key():
+    return ("gapi_blocked", "X")
+
+def _is_gapi_blocked() -> bool:
+    hit = _cache.get(_gapi_block_key())
+    return bool(hit and now_utc_ms() < hit[0])
+
+def _block_gapi(minutes: int = 10):
+    _cache[_gapi_block_key()] = (now_utc_ms() + minutes * 60 * 1000, True)
+
+
 # ----- Day cache helpers -----
 def _next_utc_midnight_ms(buffer_min: int = 5) -> int:
     now = datetime.now(timezone.utc)
@@ -735,6 +747,8 @@ async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
     """GoldAPI realtime quote for XAU/USD. Returns {bid, ask, last, open}."""
     if not GOLDAPI_KEY:
         raise RuntimeError("GoldAPI key missing")
+    if _is_gapi_blocked():
+        raise RuntimeError("GoldAPI blocked (backoff)")
     pair = symbol.upper()
     if pair == "XAUUSD":
         path = "XAU/USD"
@@ -746,6 +760,10 @@ async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
     url = f"{GOLDAPI_BASE}/{path}"
     headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
     r = await _client.get(url, headers=headers, timeout=10)
+    # If forbidden or rate-limited, trip breaker and surface error
+    if r.status_code in (403, 429):
+        _block_gapi(minutes=15)
+        raise RuntimeError(f"GoldAPI blocked: {r.status_code}")
     r.raise_for_status()
     j = r.json()
     def _to_f(v):
@@ -1024,27 +1042,31 @@ async def _pro_signal_loop():
                 await asyncio.sleep(10)
                 continue
             
-            # Get current bid/ask from primary sources
+            # Get current bid/ask from primary sources (prefer TD; use GoldAPI sparingly)
             bid, ask = None, None
             try:
-                # Try GoldAPI first
-                gq = await cached_goldapi_quote("XAUUSD", ttl_sec=2)
-                bid = gq.get("bid")
-                ask = gq.get("ask")
+                # Prefer TwelveData (short TTL)
+                tq = await cached_twelvedata_quote("XAUUSD", ttl_sec=2)
+                bid = tq.get("bid")
+                ask = tq.get("ask")
+                if bid is None and tq.get("last") is not None:
+                    mid = float(tq.get("last"))
+                    bid = mid - 0.10
+                    ask = mid + 0.10
             except Exception:
                 pass
-            
-            if bid is None or ask is None:
+
+            # Only hit GoldAPI if we still don't have a valid quote, and with long TTL
+            if (bid is None or ask is None):
                 try:
-                    # Fallback to TwelveData
-                    tq = await cached_twelvedata_quote("XAUUSD", ttl_sec=2)
-                    bid = bid or tq.get("bid")
-                    ask = ask or tq.get("ask")
-                    # Synthesize if only last available
-                    if bid is None and tq.get("last"):
-                        mid = tq["last"]
-                        bid = mid - 0.10
-                        ask = mid + 0.10
+                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=60)
+                    bid = bid or gq.get("bid")
+                    ask = ask or gq.get("ask")
+                    if (bid is None or ask is None) and gq.get("last") is not None:
+                        mid = float(gq.get("last"))
+                        spread = max(0.05, 0.0005 * mid)
+                        bid = mid - spread / 2.0
+                        ask = mid + spread / 2.0
                 except Exception:
                     pass
             
@@ -1241,22 +1263,10 @@ async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
                         }
                     }
     except Exception:
-        # fall back to stub below
+        # fall back to empty response
         pass
-    # Fallback simple stub if DB not configured or empty
-    now_ms = now_utc_ms()
-    event_time = now_ms + 42 * 60 * 1000
-    return {
-        "next_red": {
-            "title": f"{ccy} CPI",
-            "impact": "high",
-            "time_utc": str(int(event_time // 1000)),
-            "lock_window": {
-                "start_utc": str(int((event_time - 15*60*1000) // 1000)),
-                "end_utc": str(int((event_time + 15*60*1000) // 1000)),
-            }
-        }
-    }
+    # Return null when DB not configured or no upcoming events found
+    return {"next_red": None}
 
 
 # ---------------- Consolidated Home Endpoint ----------------

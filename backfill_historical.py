@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import json
 
-BACKEND_URL = "https://sniperflow-backend.onrender.com"  # or your deployed URL
+BACKEND_URL = "https://sniperflow-api.onrender.com"  # your deployed URL
 
 async def fetch_historical_ohlc(symbol="XAUUSD", limit=5000):
     """Fetch recent OHLC bars from backend."""

@@ -183,11 +183,12 @@ async def collect_one_sample():
     except Exception as e:
         log.error(f"Failed to collect ML sample: {e}")
 
-async def collector_loop(interval_sec=300):
+async def collector_loop():
     """
     Background task that runs continuously collecting training data.
-    interval_sec: default 300 (5 minutes)
     """
+    interval_sec = int(os.getenv("ML_COLLECTION_INTERVAL", 300))
+    
     if not DATABASE_URL:
         log.warning("ML collector disabled (no DATABASE_URL)")
         return

@@ -624,15 +624,8 @@ def migrate_once():
                     """
                 )
 
-            cur.execute("SELECT 1 FROM calendar LIMIT 1;")
-            if cur.fetchone() is None:
-                cur.execute(
-                    """
-                    INSERT INTO calendar(title,time,impact) VALUES
-                    ('US PMI', now() + interval '2 hour','High'),
-                    ('FOMC Minutes', now() + interval '6 hour','High');
-                    """
-                )
+            # Seed stubs removed — real data comes from free official sources via sync_calendar_free()
+            # No need to seed stub calendar events; the background sync will populate real events
 
             conn.commit()
             log.info("Migration complete.")
@@ -666,6 +659,12 @@ async def startup_event():
         log.info("Calendar sync started")
     except Exception as e:
         log.warning(f"Calendar sync not started: {e}")
+    # Kick one immediate sync so the UI has real events on first load
+    try:
+        await sync_calendar_free()
+        log.info("Calendar sync initial pass complete")
+    except Exception as e:
+        log.warning(f"Initial calendar sync failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
