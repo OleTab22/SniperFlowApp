@@ -10,7 +10,6 @@ import time
 from datetime import datetime, timezone
 import logging
 import psycopg2
-import pandas as pd
 
 log = logging.getLogger("ml_collector")
 
@@ -20,6 +19,18 @@ if not BACKEND_URL:
     BACKEND_URL = "http://localhost:8787" # Fallback for local testing
 
 COLLECTION_INTERVAL_SEC = int(os.getenv("ML_COLLECTION_INTERVAL", "300")) # Default 5 minutes
+
+
+def _is_na(v) -> bool:
+    try:
+        if v is None:
+            return True
+        # NaN check without pandas
+        if isinstance(v, float):
+            return v != v
+        return False
+    except Exception:
+        return False
 
 # Ensure the ml_features table exists
 def _ensure_db_table():
@@ -151,9 +162,9 @@ async def collect_and_store_features():
                     await asyncio.sleep(COLLECTION_INTERVAL_SEC)
                     continue
 
-                # Convert None to Python None for DB insertion
-                for k, v in features.items():
-                    if pd.isna(v):
+                # Convert None/NaN to None for DB insertion
+                for k, v in list(features.items()):
+                    if _is_na(v):
                         features[k] = None
 
                 with psycopg2.connect(DATABASE_URL, sslmode="require") as conn:
