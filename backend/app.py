@@ -2948,37 +2948,33 @@ from fastapi import WebSocket, WebSocketDisconnect
 @router.websocket("/ticks")
 async def ws_ticks(ws: WebSocket):
     await ws.accept()
-    try:
-        while True:
-            ts_ms = now_utc_ms()
-            bid = None
-            ask = None
-            last = None
-            try:
-                q = await cached_twelvedata_quote("XAUUSD")
-                bid = q.get("bid")
-                ask = q.get("ask")
-                last = q.get("last")
-            except Exception:
+    log.info("ws_ticks: client connected")
+    last_sent = 0
+    while True:
+        try:
+            # Poll for latest price every 10s to conserve API quota
+            now = now_utc_ms()
+            if now > (last_sent + 10000):
+                bid, ask, last = None, None, None
+                # Prefer GoldAPI for low-latency ticks
                 try:
-                    _candles, last_p = await get_candles("XAUUSD")
-                    last = last_p
+                    gq = await cached_goldapi_quote(symbol, ttl_sec=5)
+                    bid = gq.get("bid")
+                    ask = gq.get("ask")
+                    last = gq.get("last")
                 except Exception:
-                    last = None
-            if last is not None and (bid is None or ask is None):
-                # synthesize a tiny spread if missing
-                spread = max(0.05, 0.0005 * float(last))
-                bid = float(last) - spread / 2.0
-                ask = float(last) + spread / 2.0
-            payload = {"ts": ts_ms}
-            if bid is not None:
-                payload["bid"] = float(bid)
-            if ask is not None:
-                payload["ask"] = float(ask)
-            await ws.send_json(payload)
-            await asyncio.sleep(1.0)
-    except WebSocketDisconnect:
-        return
+                    pass
+                if last is not None and (bid is None or ask is None):
+                    # synthesize a tiny spread if missing
+                    spread = max(0.05, 0.0005 * float(last))
+                    bid = float(last) - spread / 2.0
+                    ask = float(last) + spread / 2.0
+                await ws.send_json({"ts": now, "bid": bid, "ask": ask})
+                last_sent = now
+            await asyncio.sleep(1) # short sleep to yield
+        except WebSocketDisconnect:
+            log.info("ws_ticks: client disconnected")
+            break
 
 
 @router.get("/v1/status")
