@@ -430,8 +430,7 @@ def start_calendar_sync_background():
 app = FastAPI(title="SniperFlow API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
-# Register our /home override BEFORE mounting the router, so it takes precedence
-app.add_api_route("/home", home_override, methods=["GET"])  # type: ignore[arg-type]
+# (route registration moved to decorator below)
 
 # Include non-DB endpoints from backend.app (market/levels/etc.) so one server serves all
 if data_router is not None:
@@ -439,7 +438,8 @@ if data_router is not None:
     log.info("Mounted data app router; total routes: %d", len(app.routes))
 
 # Override /home to enrich calendar from DB using official sources (keeps provider payload intact)
-async def home_override(nocache: bool = False):
+@app.get("/home")
+async def home(nocache: bool = False):
     base = {}
     if callable(provider_home):
         try:
