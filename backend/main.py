@@ -439,8 +439,7 @@ if data_router is not None:
     log.info("Mounted data app router; total routes: %d", len(app.routes))
 
 # Override /home to enrich calendar from DB using official sources (keeps provider payload intact)
-@app.get("/home")
-async def home(nocache: bool = False):
+async def home_override(nocache: bool = False):
     base = {}
     if callable(provider_home):
         try:
