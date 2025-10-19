@@ -809,34 +809,12 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
         dd = dt_hour.day
         hh = dt_hour.hour
         url = f"{base}/{instr}/{yyyy:04d}/{mm0:02d}/{dd:02d}/{hh:02d}h_ticks.bi5"
-        r = await _client.get(url, timeout=15)
-        if r.status_code != 200 or not r.content:
-            return
-        try:
-            raw = lzma.decompress(r.content)
-        except Exception:
-            return
-        rec = 20
-        for i in range(0, len(raw) - (len(raw) % rec), rec):
-            try:
-                # Dukascopy stores 5 big-endian 32-bit integers
-                # [ms, ask_int, bid_int, ask_vol_int, bid_vol_int]
-                tms, ask_i, bid_i, _av_i, _bv_i = struct.unpack(">IIIII", raw[i:i+rec])
-            except Exception:
-                continue
-            ts_ms = int(dt_hour.timestamp() * 1000) + int(tms)
-            # Detect scale to bring price into realistic gold range
-            mid_i = (ask_i + bid_i) / 2.0
-            price = None
-            for s in (100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0):
-                v = mid_i / s
-                if 500.0 <= v <= 10000.0:
-                    price = v
-                    break
-            if price is None:
-                # Fallback: assume 1000 scale for metals
-                price = mid_i / 1000.0
-            ticks.append((ts_ms, float(price)))
+        headers = {"Referer": "https://www.dukascopy.com/trading-tools/widgets/quotes/historical_data_feed"}
+        async with httpx.AsyncClient(headers=headers) as _client:
+            log.info("duka: fetching %s", url)
+            r = await _client.get(url, timeout=20)
+            r.raise_for_status()
+            return _decompress_lzma(r.content)
 
     # Fetch newest to oldest so we can early stop when enough data
     for h in range(hours_back):
@@ -863,6 +841,7 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
             except Exception:
                 continue
             ts_ms = int(dt_hr.timestamp() * 1000) + int(tms)
+            # Detect scale to bring price into realistic gold range
             mid_i = (ask_i + bid_i) / 2.0
             price = None
             for s in (100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0):
@@ -871,6 +850,7 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
                     price = v
                     break
             if price is None:
+                # Fallback: assume 1000 scale for metals
                 price = mid_i / 1000.0
             ticks.append((ts_ms, float(price)))
 
@@ -1644,15 +1624,14 @@ def _build_ml_features_from_home_payload(home_payload: dict) -> dict:
 @router.get("/home")
 async def home(nocache: bool = False):
     # Short-lived cache for consolidated payload to save upstream quotas
-    try:
-        hit = None if nocache else _cache_get(("home", "XAUUSD"), ttl_ms=5_000)
-        if hit is not None:
-            from fastapi import Response
-            r = Response()
-            r.headers["Cache-Control"] = "public, max-age=5"
-            return hit
-    except Exception:
-        pass
+    key = ("home_payload", "XAUUSD")
+    if not nocache:
+        hit = _cache.get(key)
+        if hit and now_utc_ms() < (hit[0] + 25000): # 25s TTL
+            return hit[1]
+
+    now_ms = now_utc_ms()
+    _home_partial = {"ts": now_ms}
     provider_status: Dict[str, Any] = {"candles": None, "td_pct:DXY": None, "td_pct:VIX": None, "td_pct:SPY": None, "fred:DFII10": None, "td_quote:XAUUSD": None}
     try:
         # XAU intraday (with multi-provider fallback via get_candles)
