@@ -137,8 +137,25 @@ def connect():
 # ---------------- Free, official calendar providers ----------------
 
 async def _get_text(url: str) -> str:
-    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "SniperFlow/1.0"}) as cx:
-        r = await cx.get(url)
+    # Use a browser-like UA and accept headers; some official sites block generic bots
+    base_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    headers = dict(base_headers)
+    if url.endswith(".ics"):
+        headers.update({
+            "Accept": "text/calendar, text/plain; q=0.9, */*; q=0.8",
+            "Referer": "https://www.bls.gov/",
+        })
+    async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as cx:
+        r = await cx.get(url, follow_redirects=True) # follow_redirects also helps with some sites
         r.raise_for_status()
         return r.text
 
@@ -306,8 +323,29 @@ async def fetch_fred_dates(start_utc: datetime, end_utc: datetime) -> List[Dict]
         r.raise_for_status()
         j = r.json()
     out: List[Dict] = []
+    # Filter to only relevant macro releases (exclude crypto, state-level, industry-specific)
+    RELEVANT = (
+        "Consumer Price Index",
+        "Employment Situation",
+        "Producer Price",
+        "Gross Domestic Product",
+        "Personal Income",
+        "Advance Economic Indicators",
+        "Industrial Production",
+        "Retail Sales",
+        "Durable Goods",
+        "Housing Starts",
+        "Trade",
+        "Federal Open Market Committee",
+        "Productivity and Costs",
+        "Import and Export",
+        "PCE",
+    )
     for rd in j.get("release_dates", []):
         name = rd.get("release_name", "")
+        # Skip crypto, state-level, and irrelevant releases
+        if not any(rel.lower() in name.lower() for rel in RELEVANT):
+            continue
         date_str = rd.get("date")
         if not date_str:
             continue
@@ -390,9 +428,12 @@ def start_calendar_sync_background():
 
 # ---------- APP ----------
 app = FastAPI(title="SniperFlow API", version="1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
-# Include non-DB endpoints from backend.app (market/levels/home etc.) so one server serves all
+# Register our /home override BEFORE mounting the router, so it takes precedence
+app.add_api_route("/home", home_override, methods=["GET"])  # type: ignore[arg-type]
+
+# Include non-DB endpoints from backend.app (market/levels/etc.) so one server serves all
 if data_router is not None:
     app.include_router(data_router)
     log.info("Mounted data app router; total routes: %d", len(app.routes))
@@ -417,7 +458,7 @@ async def home(nocache: bool = False):
             SELECT title,time,impact,country,currency,category,source,url,importance
             FROM calendar
             WHERE time BETWEEN now() AND now() + interval '72 hour'
-            ORDER BY (COALESCE(importance,0) DESC), time ASC
+            ORDER BY COALESCE(importance,0) DESC NULLS LAST, time ASC
             LIMIT 1
             """
         )
