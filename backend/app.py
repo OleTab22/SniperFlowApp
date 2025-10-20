@@ -988,7 +988,11 @@ async def get_candles(symbol: str):
                                 stale = _cache.get(key)
                                 if stale and (now_utc_ms() - stale[0]) < (10 * 60 * 1000):
                                     return stale[1]
-                                raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; GoldAPI failed: {e_goldapi}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
+                                err_msg = (f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; "
+                                           f"Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; "
+                                           f"GoldAPI failed: {e_goldapi}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
+                                logging.critical(f"get_candles: all providers failed and no stale cache. Details: {err_msg}")
+                                payload = ([], None)
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
