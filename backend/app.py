@@ -1268,7 +1268,7 @@ async def calendar_upcoming(ccy: str = "USD", hours: int = 72):
                     SELECT title, EXTRACT(EPOCH FROM time)::bigint AS ts_sec, COALESCE(impact,'High')
                     FROM calendar
                     WHERE time BETWEEN now() AND now() + interval %s
-                    ORDER BY (COALESCE(importance,0) DESC), time ASC
+                    ORDER BY COALESCE(importance,0) DESC, time ASC
                     LIMIT 1
                     """,
                     (f"{hrs} hour",)

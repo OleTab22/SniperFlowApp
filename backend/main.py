@@ -449,14 +449,14 @@ async def home(nocache: bool = False):
             base = {}
     if not DATABASE_URL:
         return base or {"calendar": None}
-    # Pick the next upcoming event within 72 hours; prefer importance=3
+    # Pick the next upcoming event within 168 hours; prefer importance=3
     next_evt = None
     with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(
             """
             SELECT title,time,impact,country,currency,category,source,url,importance
             FROM calendar
-            WHERE time BETWEEN now() AND now() + interval '72 hour'
+            WHERE time BETWEEN now() AND now() + interval '168 hour'
             ORDER BY COALESCE(importance,0) DESC, time ASC
             LIMIT 1
             """
@@ -479,6 +479,14 @@ async def home(nocache: bool = False):
         except Exception:
             pass
     return base
+
+@app.post("/v1/calendar/sync-now")
+async def v1_calendar_sync_now():
+    try:
+        await sync_calendar_free()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"calendar sync failed: {e}")
 
 # WebSocket endpoint for /ticks — mirror router JSON payload {ts,bid,ask}
 @app.websocket("/ticks")
@@ -783,10 +791,31 @@ def calendar_upcoming(window: str = "8h"):
         # fallback empty structure when DB is not configured
         return {"items": []}
     with connect() as c, c.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("""SELECT title,time,impact FROM calendar
-                       WHERE time BETWEEN now() AND now() + interval %s
-                       ORDER BY time ASC""", (f"{hrs} hour",))
-        return {"items": [dict(r) for r in cur.fetchall()]}
+        cur.execute(
+            """
+            SELECT title, EXTRACT(EPOCH FROM time)::bigint, COALESCE(impact,'High')
+            FROM calendar WHERE time BETWEEN now() AND now() + interval %s
+            ORDER BY COALESCE(importance,0) DESC, time ASC
+            LIMIT 1
+            """, (f"{hrs} hour",))
+        row = cur.fetchone()
+        if row:
+            t_ms = int(row[1] * 1000)
+            lock_start = int(((row[1] - timedelta(minutes=15)).timestamp()))
+            lock_end = int(((row[1] + timedelta(minutes=15)).timestamp()))
+            next_evt = {
+                "title": str(row[0] or ""),
+                "impact": (row[2] or "High"),
+                "time_utc": str(t_ms),
+                "lock_window": {"start_utc": str(lock_start), "end_utc": str(lock_end)},
+            }
+    if next_evt:
+        try:
+            base = {}
+            base["calendar"] = {"next_red": next_evt}
+        except Exception:
+            pass
+    return base
 
 def _score_from(drivers: list[dict]) -> int:
     # DXY and US10Y up -> bearish (-); SPY up -> bullish (+)
