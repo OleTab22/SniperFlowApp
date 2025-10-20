@@ -3601,6 +3601,14 @@ async def alpha_dxy_pct() -> Optional[float]:
     """Compute DXY percent change via Alpha Vantage FX_DAILY pairs; fallback to UUP percent if needed."""
     if not ALPHA_KEY:
         return None
+    # First try ETF proxy UUP for robust coverage
+    try:
+        uup = await fetch_alpha_global_quote_pct("UUP")
+        if uup is not None:
+            return uup
+    except Exception:
+        pass
+    # Then try FX pair synthesis
     DXY_CONST = 50.14348112
     WEIGHTS = [
         ("EUR", "USD", -0.576),
@@ -3614,8 +3622,7 @@ async def alpha_dxy_pct() -> Optional[float]:
         tasks = [_alpha_fx_daily_pair_latest_prev(fr, to) for fr, to, _ in WEIGHTS]
         pairs = await asyncio.gather(*tasks)
         if any(p is None for p in pairs):
-            # ETF proxy percent change fallback
-            return await fetch_alpha_global_quote_pct("UUP")
+            return None
         def dxy_from(values: List[Tuple[float, float]], idx: int) -> float:
             v = DXY_CONST
             for (fr, to, w), pair in zip(WEIGHTS, values):
@@ -3628,7 +3635,4 @@ async def alpha_dxy_pct() -> Optional[float]:
             return None
         return ((last_val - prev_val) / prev_val) * 100.0
     except Exception:
-        try:
-            return await fetch_alpha_global_quote_pct("UUP")
-        except Exception:
-            return None
+        return None
