@@ -1044,8 +1044,8 @@ async def _pro_signal_loop():
             # Get current bid/ask from primary sources (prefer TD; use GoldAPI sparingly)
             bid, ask = None, None
             try:
-                # Prefer TwelveData (short TTL)
-                tq = await cached_twelvedata_quote("XAUUSD", ttl_sec=10)
+                # Prefer TwelveData (long TTL to conserve credits)
+                tq = await cached_twelvedata_quote("XAUUSD", ttl_sec=900)  # 15 minutes
                 bid = tq.get("bid")
                 ask = tq.get("ask")
                 if bid is None and tq.get("last") is not None:
@@ -1058,7 +1058,7 @@ async def _pro_signal_loop():
             # Only hit GoldAPI if we still don't have a valid quote, and with long TTL
             if (bid is None or ask is None):
                 try:
-                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=60)
+                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=1800)  # 30 minutes
                     bid = bid or gq.get("bid")
                     ask = ask or gq.get("ask")
                     if (bid is None or ask is None) and gq.get("last") is not None:
@@ -1073,7 +1073,7 @@ async def _pro_signal_loop():
             if bid and ask and ask > bid:
                 _micro_engine.on_tick(bid, ask, time.time())
                 
-                context = _cache_get(context_key, ttl_ms=60_000)
+                context = _cache_get(context_key, ttl_ms=3_600_000)  # 60 minutes
                 if not context:
                     # Get levels context for sweep detection
                     pdh, pdl = None, None
@@ -1109,12 +1109,12 @@ async def _pro_signal_loop():
                     # Broadcast to websocket clients
                     await _broadcast_signal(sig)
             
-            # 1 Hz loop
-            await asyncio.sleep(1.0)
+            # Slowed down loop
+            await asyncio.sleep(10.0)
             
         except Exception as e:
             logging.exception(f"Pro signal loop error: {e}")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(10.0)
 
 
 @router.get("/health")
