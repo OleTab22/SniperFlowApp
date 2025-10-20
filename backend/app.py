@@ -702,15 +702,14 @@ async def fetch_twelvedata_quote(symbol: str) -> Dict[str, float]:
     _cache_put(cache_key, out)
     return out
 
-async def cached_twelvedata_quote(symbol: str, ttl_sec: int = 120) -> Dict[str, float]:
+async def cached_twelvedata_quote(symbol: str, ttl_sec: int = 60) -> Dict[str, float]:
     """Cache TD quote to avoid exceeding free-tier limits."""
     key = ("td_quote", symbol.upper())
-    hit = _cache.get(key)
-    now = now_utc_ms()
-    if hit and (now - hit[0] < ttl_sec * 1000):
-        return hit[1]
+    hit = _cache_get(key, ttl_ms=ttl_sec * 1000)
+    if hit is not None:
+        return hit
     q = await fetch_twelvedata_quote(symbol)
-    _cache[key] = (now, q)
+    _cache_put(key, q)
     return q
 
 async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
@@ -1618,11 +1617,11 @@ def _build_ml_features_from_home_payload(home_payload: dict) -> dict:
 
 @router.get("/home")
 async def home(nocache: bool = False):
-    # Short-lived cache for consolidated payload to save upstream quotas
+    # Sticky cache for consolidated payload to save upstream quotas (only recompute when nocache=true)
     key = ("home_payload", "XAUUSD")
     if not nocache:
         hit = _cache.get(key)
-        if hit and now_utc_ms() < (hit[0] + 25000): # 25s TTL
+        if hit:
             return hit[1]
 
     now_ms = now_utc_ms()
@@ -1674,8 +1673,15 @@ async def home(nocache: bool = False):
         change_day = (last_price - base_do) if (base_do is not None) else None
         pct_day = ((change_day / base_do) * 100.0) if (base_do and base_do != 0) else None
 
-        # SAST DO
-        do_price = _find_sast_midnight_open(candles)
+        # SAST DO: use daily-cached DO first (stable per day), fallback to candle-derived
+        do_price = None
+        try:
+            lv = await levels_today_cached("XAUUSD")
+            do_price = (lv or {}).get("DO")
+        except Exception:
+            do_price = None
+        if do_price is None:
+            do_price = _find_sast_midnight_open(candles)
 
         # Drivers via Twelve Data percent change (cached) and FRED daily
         drivers = []
@@ -2985,7 +2991,7 @@ async def v1_status(symbol: str = "XAUUSD"):
         # reuse quality logic via a lightweight quote fetch
         bid = None; ask = None; spread_pts = None
         try:
-            q = await cached_twelvedata_quote(symbol, ttl_sec=5)
+            q = await cached_twelvedata_quote(symbol, ttl_sec=300)
             bid = q.get("bid"); ask = q.get("ask")
             if bid and ask:
                 spread_pts = int(round(max(0.0, float(ask) - float(bid)) * 100))
