@@ -136,6 +136,17 @@ async def levels_today_cached(symbol: str, candles: Optional[list] = None) -> Op
                 raise RuntimeError("incomplete goldapi pdh/pdl")
         except Exception:
             prev_levels = await stooq_daily_pdh_pdl(symbol)
+        # Final fallback: derive PDH/PDL from candles if still missing
+        if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+            try:
+                local_candles = candles
+                if local_candles is None:
+                    local_candles, _ = await get_candles(symbol)
+                pv = _compute_prev_day_levels_strict_utc(local_candles, max_lookback_days=3)
+                if pv.get("PDH") is not None and pv.get("PDL") is not None:
+                    prev_levels = pv
+            except Exception:
+                pass
         # DO priority: GoldAPI open -> candles -> Stooq daily open
         do_price = None
         try:
@@ -2206,6 +2217,17 @@ async def home(nocache: bool = False):
                 do_price = await stooq_daily_open_today("XAUUSD")
             except Exception:
                 pass
+        # 24h high/low from candles as fallback
+        high24h_calc = None
+        low24h_calc = None
+        try:
+            start24 = end_ms - 24 * 60 * 60 * 1000
+            w24 = [c for c in candles if c["t"] >= start24]
+            if w24:
+                high24h_calc = max(c.get("h") for c in w24 if c.get("h") is not None)
+                low24h_calc = min(c.get("l") for c in w24 if c.get("l") is not None)
+        except Exception:
+            pass
         # FRED extras: real (DFII10), nominal (DGS10), breakeven = nominal - real
         fred_real = None
         fred_nom = None
@@ -2291,8 +2313,10 @@ async def home(nocache: bool = False):
                 "closes": [c["c"] for c in intraday] if ('intraday' in locals() and intraday) else ([_ for _ in []]),
                 "bid": bid,
                 "ask": ask,
-                # Populate 24h high/low from GoldAPI when available
-                **(lambda: (lambda gq: {"high24h": gq.get("high"), "low24h": gq.get("low")}) (gq) if 'gq' in locals() and isinstance(gq, dict) else {})()
+                # 24h high/low: prefer GoldAPI if present, else candles
+                **(lambda: (lambda gq: {"high24h": gq.get("high"), "low24h": gq.get("low")}) (gq) if 'gq' in locals() and isinstance(gq, dict) else {})(),
+                **({"high24h": high24h_calc} if high24h_calc is not None else {}),
+                **({"low24h": low24h_calc} if low24h_calc is not None else {}),
             },
             "levels": {
                 "do": {"price": do_price},
