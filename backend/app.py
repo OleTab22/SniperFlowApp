@@ -43,6 +43,7 @@ FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 FRED_KEY = os.getenv("FRED_API_KEY")
 GOLDAPI_BASE = "https://www.goldapi.io/api"
 GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
+ENABLE_GOLDAPI = (os.getenv("ENABLE_GOLDAPI", "false").lower() == "true")
 
 _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
@@ -751,6 +752,8 @@ async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
 
 async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
     """GoldAPI realtime quote for XAU/USD. Returns {bid, ask, last, open}."""
+    if not ENABLE_GOLDAPI:
+        raise RuntimeError("GoldAPI disabled by ENABLE_GOLDAPI=false")
     if not GOLDAPI_KEY:
         raise RuntimeError("GoldAPI key missing")
     if _is_gapi_blocked():
@@ -791,6 +794,8 @@ async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
     return out
 
 async def cached_goldapi_quote(symbol: str, ttl_sec: int = 60) -> Dict[str, float]:
+    if not ENABLE_GOLDAPI:
+        raise RuntimeError("GoldAPI disabled by ENABLE_GOLDAPI=false")
     key = ("gapi_quote", symbol.upper())
     hit = _cache.get(key)
     now = now_utc_ms()
@@ -2101,63 +2106,36 @@ async def home(nocache: bool = False):
         # Add DO context as a chip
         drivers.append({"key": "do_ctx", "value": do_contrib_val, "stale": False, "contribution": term_do / sum_abs})
 
-        # Quote for bid/ask and spread/quality (GoldAPI preferred)
+        # Quote for bid/ask and spread/quality (prefer TD; GoldAPI last-resort)
         bid = None
         ask = None
         spread_pts = None
-        # Try GoldAPI first
+        # Try TwelveData first
         try:
-            gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
-            bid = gq.get("bid")
-            ask = gq.get("ask")
+            q = await cached_twelvedata_quote("XAUUSD", ttl_sec=5)
+            bid = q.get("bid")
+            ask = q.get("ask")
             if bid and ask:
                 last_price = (bid + ask) / 2.0
                 spread = max(0.0, float(ask) - float(bid))
-                spread_pts = int(round(spread * 100))
-            elif gq.get("last") is not None:
-                last_price = gq.get("last")
-            provider_status["gapi_quote:XAUUSD"] = True
+                spread_pts = int(round(spread * 100))  # ~0.01 per point
+            elif q.get("last") is not None:
+                last_price = q.get("last")
+            provider_status["td_quote:XAUUSD"] = True
         except Exception:
-            provider_status["gapi_quote:XAUUSD"] = False
-            # Fallback to TwelveData
+            logging.exception("home: td quote failed")
+            provider_status["td_quote:XAUUSD"] = False
+        # GoldAPI only if still missing and enabled
+        if (bid is None or ask is None) and ENABLE_GOLDAPI:
             try:
-                q = await cached_twelvedata_quote("XAUUSD", ttl_sec=5)
-                bid = q.get("bid")
-                ask = q.get("ask")
-                if bid and ask:
-                    last_price = (bid + ask) / 2.0
-                    spread = max(0.0, float(ask) - float(bid))
-                    spread_pts = int(round(spread * 100))  # ~0.01 per point
-                elif q.get("last") is not None:
-                    last_price = q.get("last")
-                provider_status["td_quote:XAUUSD"] = True
+                gq = await cached_goldapi_quote("XAUUSD", ttl_sec=60 * 60 * 12)  # 12h TTL
+                bid = bid or gq.get("bid")
+                ask = ask or gq.get("ask")
+                if (bid is None or ask is None) and gq.get("last") is not None:
+                    last_price = gq.get("last")
+                provider_status["gapi_quote:XAUUSD"] = True
             except Exception:
-                logging.exception("home: td quote failed")
-                provider_status["td_quote:XAUUSD"] = False
-                # Alpha realtime last, then Yahoo last
-                if last_price is None:
-                    try:
-                        last_alpha = await fetch_alpha_fx_last("XAUUSD")
-                        if last_alpha is not None:
-                            last_price = last_alpha
-                            provider_status["alpha:last:XAUUSD"] = True
-                    except Exception:
-                        provider_status["alpha:last:XAUUSD"] = False
-                    if last_price is None:
-                        try:
-                            # try spot, then futures
-                            lp = None
-                            for s in _yf_symbol_xau():
-                                lp = await yahoo_last(s)
-                                if lp is not None:
-                                    break
-                            if lp is not None:
-                                last_price = lp
-                                provider_status["yahoo:last:XAUUSD"] = True
-                            else:
-                                provider_status["yahoo:last:XAUUSD"] = False
-                        except Exception:
-                            provider_status["yahoo:last:XAUUSD"] = False
+                provider_status["gapi_quote:XAUUSD"] = False
 
         # Quality state from spread/latency with clamping for outliers
         latency_ms = 0
@@ -3045,12 +3023,12 @@ async def ws_ticks(ws: WebSocket):
             now = now_utc_ms()
             if now > (last_sent + 10000):
                 bid, ask, last = None, None, None
-                # Prefer GoldAPI for low-latency ticks
+                # Prefer TD for ticks; avoid GoldAPI (100 req/month)
                 try:
-                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=15)
-                    bid = gq.get("bid")
-                    ask = gq.get("ask")
-                    last = gq.get("last")
+                    q = await cached_twelvedata_quote("XAUUSD", ttl_sec=5)
+                    bid = q.get("bid")
+                    ask = q.get("ask")
+                    last = q.get("last")
                 except Exception:
                     pass
                 if last is not None and (bid is None or ask is None):
