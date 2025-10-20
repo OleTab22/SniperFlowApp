@@ -119,7 +119,7 @@ def _next_utc_midnight_ms(buffer_min: int = 5) -> int:
     nxt = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     return int(nxt.timestamp() * 1000) + buffer_min * 60 * 1000
 
-async def levels_today_cached(symbol: str) -> Optional[dict]:
+async def levels_today_cached(symbol: str, candles: Optional[list] = None) -> Optional[dict]:
     """Compute DO/PDH/PDL once per UTC day and cache until next midnight."""
     # v2: bump cache key to recompute after logic changes
     key = ("levels_today_v2", symbol.upper())
@@ -139,11 +139,13 @@ async def levels_today_cached(symbol: str) -> Optional[dict]:
             pass
         if do_price is None:
             try:
-                candles, _last = await get_candles(symbol)
+                local_candles = candles
+                if local_candles is None:
+                    local_candles, _last = await get_candles(symbol)
                 now_utc = datetime.now(timezone.utc)
                 today_midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
                 next_midnight = today_midnight + timedelta(days=1)
-                today_window = filter_candles(candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
+                today_window = filter_candles(local_candles, to_utc_ms(today_midnight), to_utc_ms(next_midnight))
                 do_price = compute_levels_for_window(today_window)["DO"]
             except Exception:
                 pass
@@ -960,33 +962,33 @@ async def get_candles(symbol: str):
                         payload = (synth, last)
                     else:
                         raise RuntimeError("Alpha FX last unavailable")
-            except Exception as e_alpha_last:
-                # Try GoldAPI last/mid and synthesize candles to keep UI responsive
-                try:
-                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
-                    last = None
-                    if gq.get("last") is not None:
-                        last = float(gq["last"])
-                    elif gq.get("bid") is not None and gq.get("ask") is not None:
-                        last = (float(gq["bid"]) + float(gq["ask"])) / 2.0
-                    if last is not None:
-                        synth = _build_synthetic_candles_from_last(last)
-                        payload = (synth, last)
-                    else:
-                        raise RuntimeError("GoldAPI last unavailable")
-                except Exception as e_goldapi:
+                except Exception as e_alpha_last:
+                    # Try GoldAPI last/mid and synthesize candles to keep UI responsive
                     try:
-                        payload = await fetch_stooq(symbol)
-                    except Exception as e_stooq:
+                        gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
+                        last = None
+                        if gq.get("last") is not None:
+                            last = float(gq["last"])
+                        elif gq.get("bid") is not None and gq.get("ask") is not None:
+                            last = (float(gq["bid"]) + float(gq["ask"])) / 2.0
+                        if last is not None:
+                            synth = _build_synthetic_candles_from_last(last)
+                            payload = (synth, last)
+                        else:
+                            raise RuntimeError("GoldAPI last unavailable")
+                    except Exception as e_goldapi:
                         try:
-                            # Use shorter timeout path already inside fetch_dukascopy; if still fails, bubble up
-                            payload = await fetch_dukascopy(symbol)
-                        except Exception as e_duka:
-                            # As a final guard, serve emergency stale cache (up to 10 minutes) if available
-                            stale = _cache.get(key)
-                            if stale and (now_utc_ms() - stale[0]) < (10 * 60 * 1000):
-                                return stale[1]
-                            raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; GoldAPI failed: {e_goldapi}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
+                            payload = await fetch_stooq(symbol)
+                        except Exception as e_stooq:
+                            try:
+                                # Use shorter timeout path already inside fetch_dukascopy; if still fails, bubble up
+                                payload = await fetch_dukascopy(symbol)
+                            except Exception as e_duka:
+                                # As a final guard, serve emergency stale cache (up to 10 minutes) if available
+                                stale = _cache.get(key)
+                                if stale and (now_utc_ms() - stale[0]) < (10 * 60 * 1000):
+                                    return stale[1]
+                                raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; GoldAPI failed: {e_goldapi}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
@@ -1028,6 +1030,7 @@ async def _pro_signal_loop():
     Generates institutional-lite signals based on OFI + microprice + regime.
     """
     global _last_pro_signal
+    context_key = ("pro_signal_context", "XAUUSD")
     while True:
         try:
             if not _micro_enabled or _micro_engine is None:
@@ -1038,7 +1041,7 @@ async def _pro_signal_loop():
             bid, ask = None, None
             try:
                 # Prefer TwelveData (short TTL)
-                tq = await cached_twelvedata_quote("XAUUSD", ttl_sec=2)
+                tq = await cached_twelvedata_quote("XAUUSD", ttl_sec=10)
                 bid = tq.get("bid")
                 ask = tq.get("ask")
                 if bid is None and tq.get("last") is not None:
@@ -1066,28 +1069,32 @@ async def _pro_signal_loop():
             if bid and ask and ask > bid:
                 _micro_engine.on_tick(bid, ask, time.time())
                 
-                # Get levels context for sweep detection
-                pdh, pdl = None, None
-                try:
-                    lvls = await levels_today_cached("XAUUSD")
-                    if lvls:
-                        pdh = lvls.get("PDH")
-                        pdl = lvls.get("PDL")
-                except Exception:
-                    pass
-                
-                # Get ATR for stop sizing (from existing home logic or fallback)
-                atr_5m = None
-                try:
-                    candles, _ = await get_candles("XAUUSD")
-                    atr_5m = _wilder_atr20_from_ohlc1m(candles)
-                    if atr_5m:
-                        atr_5m = atr_5m / 24.0  # Scale down to ~5m equivalent
-                except Exception:
-                    pass
+                context = _cache_get(context_key, ttl_ms=60_000)
+                if not context:
+                    # Get levels context for sweep detection
+                    pdh, pdl = None, None
+                    try:
+                        lvls = await levels_today_cached("XAUUSD")
+                        if lvls:
+                            pdh = lvls.get("PDH")
+                            pdl = lvls.get("PDL")
+                    except Exception:
+                        pass
+                    
+                    # Get ATR for stop sizing (from existing home logic or fallback)
+                    atr_5m = None
+                    try:
+                        candles, _ = await get_candles("XAUUSD")
+                        atr_5m = _wilder_atr20_from_ohlc1m(candles)
+                        if atr_5m:
+                            atr_5m = atr_5m / 24.0  # Scale down to ~5m equivalent
+                    except Exception:
+                        pass
+                    context = {"pdh": pdh, "pdl": pdl, "atr_5m": atr_5m}
+                    _cache_put(context_key, context)
                 
                 # Generate signal
-                sig = _micro_engine.make_signal(pdh=pdh, pdl=pdl, atr_5m=atr_5m)
+                sig = _micro_engine.make_signal(pdh=context.get("pdh"), pdl=context.get("pdl"), atr_5m=context.get("atr_5m"))
                 if sig:
                     sig["symbol"] = "XAUUSD"
                     sig["ts"] = now_utc_ms()
@@ -1635,12 +1642,12 @@ def _build_ml_features_from_home_payload(home_payload: dict) -> dict:
 
 @router.get("/home")
 async def home(nocache: bool = False):
-    # Sticky cache for consolidated payload to save upstream quotas (only recompute when nocache=true)
-    key = ("home_payload", "XAUUSD")
+    # Short-ttl cache to save upstream quotas (align with client cache header)
+    key = ("home", "XAUUSD")
     if not nocache:
-        hit = _cache.get(key)
-        if hit:
-            return hit[1]
+        hit = _cache_get(key, ttl_ms=5 * 1000)
+        if hit is not None:
+            return hit
 
     now_ms = now_utc_ms()
     _home_partial = {"ts": now_ms}
@@ -1694,7 +1701,7 @@ async def home(nocache: bool = False):
         # SAST DO: use daily-cached DO first (stable per day), fallback to candle-derived
         do_price = None
         try:
-            lv = await levels_today_cached("XAUUSD")
+            lv = await levels_today_cached("XAUUSD", candles=candles)
             do_price = (lv or {}).get("DO")
         except Exception:
             do_price = None
@@ -2014,7 +2021,7 @@ async def home(nocache: bool = False):
 
         # Rebuild macro drivers using the unified engine so signs/scale match v1 consistently
         try:
-            drv_u = await _compute_drivers_payload()
+            drv_u = await _compute_drivers_payload(candles=candles, last_price=last_price)
             dxy_z = float(drv_u.get("dxy", {}).get("z", 0.0))           # already sign-adjusted (− for gold)
             real_z = float(drv_u.get("real10y", {}).get("z", 0.0))      # already sign-adjusted (− for gold)
             vix_z = float(drv_u.get("vix", {}).get("z", 0.0))
@@ -2350,7 +2357,7 @@ async def home(nocache: bool = False):
         payload["provider_status"] = provider_status
         if not nocache:
             try:
-                _cache_put(("home", "XAUUSD"), payload)
+                _cache_put(key, payload)
             except Exception:
                 pass
         from fastapi import Response
@@ -2386,7 +2393,7 @@ def _staleness(last_ts_ms: int, now_ms: int, fresh_threshold_min: int = 10) -> t
     return (delta_s <= fresh_threshold_min * 60, delta_s)
 
 
-async def _compute_drivers_payload() -> Dict[str, Any]:
+async def _compute_drivers_payload(candles: Optional[list] = None, last_price: Optional[float] = None) -> Dict[str, Any]:
     """
     Internal helper that pulls intraday ^DXY, ^VIX, ^TNX from Yahoo,
     computes z-scores, freshness, and returns the drivers dict.
@@ -2488,11 +2495,13 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
 
     # DO context driver (distance to DO/PDH/PDL, signed by current price vs DO)
     try:
-        candles, last_price = await get_candles("XAUUSD")
+        local_candles, local_last_price = candles, last_price
+        if local_candles is None or local_last_price is None:
+            local_candles, local_last_price = await get_candles("XAUUSD")
         nyt = ny_now()
         anchor = session_day_anchor(nyt)
-        today = filter_candles(candles, to_utc_ms(anchor), to_utc_ms(anchor + timedelta(days=1)))
-        prev = filter_candles(candles, to_utc_ms(anchor - timedelta(days=1)), to_utc_ms(anchor))
+        today = filter_candles(local_candles, to_utc_ms(anchor), to_utc_ms(anchor + timedelta(days=1)))
+        prev = filter_candles(local_candles, to_utc_ms(anchor - timedelta(days=1)), to_utc_ms(anchor))
         do_price = compute_levels_for_window(today)["DO"]
         prev_levels = compute_levels_for_window(prev)
         pdh = prev_levels.get("PDH")
@@ -2500,7 +2509,7 @@ async def _compute_drivers_payload() -> Dict[str, Any]:
         z = 0.0
         if do_price and pdh and pdl and (pdh - pdl) != 0:
             # signed distance normalized by previous range
-            z = ((float(last_price) - float(do_price)) / (float(pdh) - float(pdl))) * 2.0  # scale into ~[-2,2]
+            z = ((float(local_last_price) - float(do_price)) / (float(pdh) - float(pdl))) * 2.0  # scale into ~[-2,2]
         out["do_ctx"] = {"z": float(max(-3.0, min(3.0, z))), "w": 0.10, "fresh": True, "staleSec": 0}
     except Exception:
         out.setdefault("do_ctx", {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None})
@@ -2977,7 +2986,7 @@ async def ws_ticks(ws: WebSocket):
                 bid, ask, last = None, None, None
                 # Prefer GoldAPI for low-latency ticks
                 try:
-                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
+                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=15)
                     bid = gq.get("bid")
                     ask = gq.get("ask")
                     last = gq.get("last")
