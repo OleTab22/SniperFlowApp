@@ -819,21 +819,18 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
     # Fetch newest to oldest so we can early stop when enough data
     for h in range(hours_back):
         dt_hr = now_utc - timedelta(hours=h)
-        base = "https://datafeed.dukascopy.com/datafeed"
-        yyyy = dt_hr.year
-        mm0 = dt_hr.month - 1
-        dd = dt_hr.day
-        hh = dt_hr.hour
-        url = f"{base}/{instr}/{yyyy:04d}/{mm0:02d}/{dd:02d}/{hh:02d}h_ticks.bi5"
-        # Early stop if hour not available (404 or empty); don't hammer later hours
-        r = await _client.get(url, timeout=10)
-        if r.status_code == 404 or not r.content:
-            break
         try:
-            raw = lzma.decompress(r.content)
+            raw = await fetch_hour(dt_hr)
+            if not raw:
+                break
+        except httpx.HTTPStatusError as e:
+            if e.response is not None and e.response.status_code == 404:
+                break
+            else:
+                continue
         except Exception:
             break
-        # re-use parsed block via local parse to ticks
+        # parse decompressed bytes
         rec = 20
         for i in range(0, len(raw) - (len(raw) % rec), rec):
             try:
@@ -841,7 +838,6 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
             except Exception:
                 continue
             ts_ms = int(dt_hr.timestamp() * 1000) + int(tms)
-            # Detect scale to bring price into realistic gold range
             mid_i = (ask_i + bid_i) / 2.0
             price = None
             for s in (100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0):
@@ -850,7 +846,6 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
                     price = v
                     break
             if price is None:
-                # Fallback: assume 1000 scale for metals
                 price = mid_i / 1000.0
             ticks.append((ts_ms, float(price)))
 
@@ -2948,7 +2943,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 @router.websocket("/ticks")
 async def ws_ticks(ws: WebSocket):
     await ws.accept()
-    log.info("ws_ticks: client connected")
+    logging.info("ws_ticks: client connected")
     last_sent = 0
     while True:
         try:
@@ -2958,7 +2953,7 @@ async def ws_ticks(ws: WebSocket):
                 bid, ask, last = None, None, None
                 # Prefer GoldAPI for low-latency ticks
                 try:
-                    gq = await cached_goldapi_quote(symbol, ttl_sec=5)
+                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
                     bid = gq.get("bid")
                     ask = gq.get("ask")
                     last = gq.get("last")
@@ -2973,7 +2968,7 @@ async def ws_ticks(ws: WebSocket):
                 last_sent = now
             await asyncio.sleep(1) # short sleep to yield
         except WebSocketDisconnect:
-            log.info("ws_ticks: client disconnected")
+            logging.info("ws_ticks: client disconnected")
             break
 
 

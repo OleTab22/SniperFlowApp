@@ -457,7 +457,7 @@ async def home(nocache: bool = False):
             SELECT title,time,impact,country,currency,category,source,url,importance
             FROM calendar
             WHERE time BETWEEN now() AND now() + interval '72 hour'
-            ORDER BY COALESCE(importance,0) DESC NULLS LAST, time ASC
+            ORDER BY COALESCE(importance,0) DESC, time ASC
             LIMIT 1
             """
         )

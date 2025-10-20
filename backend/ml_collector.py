@@ -150,7 +150,7 @@ async def collect_and_store_features():
         while True:
             try:
                 log.info("Fetching /home for ML features...")
-                response = await client.get("/home?nocache=true")
+                response = await client.get("/home")
                 response.raise_for_status()
                 home_payload = response.json()
                 features = _extract_features(home_payload)
