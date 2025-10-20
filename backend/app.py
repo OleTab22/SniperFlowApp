@@ -960,7 +960,21 @@ async def get_candles(symbol: str):
                         payload = (synth, last)
                     else:
                         raise RuntimeError("Alpha FX last unavailable")
-                except Exception as e_alpha_last:
+            except Exception as e_alpha_last:
+                # Try GoldAPI last/mid and synthesize candles to keep UI responsive
+                try:
+                    gq = await cached_goldapi_quote("XAUUSD", ttl_sec=5)
+                    last = None
+                    if gq.get("last") is not None:
+                        last = float(gq["last"])
+                    elif gq.get("bid") is not None and gq.get("ask") is not None:
+                        last = (float(gq["bid"]) + float(gq["ask"])) / 2.0
+                    if last is not None:
+                        synth = _build_synthetic_candles_from_last(last)
+                        payload = (synth, last)
+                    else:
+                        raise RuntimeError("GoldAPI last unavailable")
+                except Exception as e_goldapi:
                     try:
                         payload = await fetch_stooq(symbol)
                     except Exception as e_stooq:
@@ -968,7 +982,11 @@ async def get_candles(symbol: str):
                             # Use shorter timeout path already inside fetch_dukascopy; if still fails, bubble up
                             payload = await fetch_dukascopy(symbol)
                         except Exception as e_duka:
-                            raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
+                            # As a final guard, serve emergency stale cache (up to 10 minutes) if available
+                            stale = _cache.get(key)
+                            if stale and (now_utc_ms() - stale[0]) < (10 * 60 * 1000):
+                                return stale[1]
+                            raise RuntimeError(f"TwelveData failed: {e_twelve}; Alpha failed: {e_alpha}; Yahoo series failed: {e_yahoo_series}; Alpha FX last failed: {e_alpha_last}; GoldAPI failed: {e_goldapi}; Stooq failed: {e_stooq}; Dukascopy failed: {e_duka}")
     _cache[key] = (now_utc_ms(), payload)
     return payload
 
