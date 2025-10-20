@@ -44,6 +44,7 @@ FRED_KEY = os.getenv("FRED_API_KEY")
 GOLDAPI_BASE = "https://www.goldapi.io/api"
 GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
 ENABLE_GOLDAPI = (os.getenv("ENABLE_GOLDAPI", "false").lower() == "true")
+ALPHA_PCT_TTL_MS = int(os.getenv("ALPHA_PCT_TTL_MS", "300000"))  # default 5 minutes
 
 _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
@@ -461,7 +462,7 @@ async def fetch_alpha_global_quote_pct(symbol: str) -> Optional[float]:
         return None
     key = ("alpha_pct", symbol.upper())
     hit = _cache.get(key)
-    if hit and (now_utc_ms() - hit[0]) < 30_000:
+    if hit and (now_utc_ms() - hit[0]) < ALPHA_PCT_TTL_MS:
         return hit[1]
     params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": ALPHA_KEY}
     r = await _client.get(ALPHA_BASE, params=params, timeout=10)
@@ -3601,10 +3602,16 @@ async def alpha_dxy_pct() -> Optional[float]:
     """Compute DXY percent change via Alpha Vantage FX_DAILY pairs; fallback to UUP percent if needed."""
     if not ALPHA_KEY:
         return None
+    # Cache wrapper to avoid recomputation and throttle
+    cache_key = ("alpha_dxy_pct", "DXY")
+    hit = _cache.get(cache_key)
+    if hit and (now_utc_ms() - hit[0]) < ALPHA_PCT_TTL_MS:
+        return hit[1]
     # First try ETF proxy UUP for robust coverage
     try:
         uup = await fetch_alpha_global_quote_pct("UUP")
         if uup is not None:
+            _cache[cache_key] = (now_utc_ms(), uup)
             return uup
     except Exception:
         pass
@@ -3633,6 +3640,8 @@ async def alpha_dxy_pct() -> Optional[float]:
         prev_val = dxy_from(pairs, 1)
         if prev_val == 0:
             return None
-        return ((last_val - prev_val) / prev_val) * 100.0
+        pct = ((last_val - prev_val) / prev_val) * 100.0
+        _cache[cache_key] = (now_utc_ms(), pct)
+        return pct
     except Exception:
         return None
