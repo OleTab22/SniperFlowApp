@@ -24,7 +24,7 @@ import httpx
 import logging
 from datetime import datetime, timedelta, timezone
 import pytz
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 import csv
 from io import StringIO
 import math
@@ -128,8 +128,13 @@ async def levels_today_cached(symbol: str, candles: Optional[list] = None) -> Op
     if hit and now < hit[0]:
         return hit[1]
     try:
-        # Preferred PDH/PDL from Stooq daily
-        prev_levels = await stooq_daily_pdh_pdl(symbol)
+        # Preferred PDH/PDL from GoldAPI daily; fallback to Stooq daily
+        try:
+            prev_levels = await goldapi_pdh_pdl(symbol)
+            if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+                raise RuntimeError("incomplete goldapi pdh/pdl")
+        except Exception:
+            prev_levels = await stooq_daily_pdh_pdl(symbol)
         # DO priority: GoldAPI open -> candles -> Stooq daily open
         do_price = None
         try:
@@ -2406,43 +2411,79 @@ async def _compute_drivers_payload(candles: Optional[list] = None, last_price: O
     end_ms = now_utc_ms()
     out = {}
 
+    # Prefer TwelveData percent changes for DXY/VIX/SPY
+    td_dxy = td_vix = td_spy = None
+    try:
+        td_dxy, td_vix, td_spy = await asyncio.gather(
+            td_quote_pct("DXY"),
+            td_quote_pct("VIX"),
+            td_quote_pct("SPY"),
+        )
+    except Exception:
+        td_dxy = td_vix = td_spy = None
+    if td_dxy is not None:
+        out["dxy"] = {"z": float(-td_dxy), "w": 0.35, "fresh": True, "staleSec": 0}
+    if td_vix is not None:
+        out["vix"] = {"z": float(td_vix), "w": 0.20, "fresh": True, "staleSec": 0}
+    if td_spy is not None:
+        z_risk = float(td_spy)
+        if td_vix is not None:
+            z_risk = 0.60 * float(td_spy) - 0.40 * float(td_vix)
+        out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": True, "staleSec": 0}
+
     # DXY fallback chain: DX-Y.NYB -> DX=F -> UUP -> ^DXY
     dxy = await _fetch_intraday_yf_series_multi(["DX-Y.NYB", "DX=F", "UUP", "^DXY"])
     vix = await _fetch_intraday_yf_series("^VIX")
     tnx = await _fetch_intraday_yf_series("^TNX")  # 10y nominal yield *10
     es = await _fetch_intraday_yf_series("ES=F")   # S&P futures for risk-on
 
-    if dxy and dxy.get("candles"):
+    if "dxy" not in out and dxy and dxy.get("candles"):
         last_ts = dxy["candles"][-1]["t"]
         # Allow up to 30 minutes before calling it stale
         fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z = _z_from_tail([c["c"] for c in dxy["candles"]])
         out["dxy"] = {"z": float(-z), "w": 0.35, "fresh": fresh, "staleSec": stale, "sym": dxy.get("symbol")}
-    else:
+    elif "dxy" not in out:
         # Fallback to TwelveData percent change if available
         try:
             pct = await td_quote_pct("DXY")
             if pct is not None:
                 out["dxy"] = {"z": float(-pct), "w": 0.35, "fresh": True, "staleSec": 0}
             else:
-                out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+                ap = await alpha_dxy_pct()
+                if ap is not None:
+                    out["dxy"] = {"z": float(-ap), "w": 0.35, "fresh": True, "staleSec": 0}
+                else:
+                    out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
         except Exception:
-            out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
+            ap = await alpha_dxy_pct()
+            if ap is not None:
+                out["dxy"] = {"z": float(-ap), "w": 0.35, "fresh": True, "staleSec": 0}
+            else:
+                out["dxy"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
 
-    if vix and vix["candles"]:
+    if "vix" not in out and vix and vix["candles"]:
         last_ts = vix["candles"][-1]["t"]
         fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z = _z_from_tail([c["c"] for c in vix["candles"]])
         out["vix"] = {"z": float(z), "w": 0.20, "fresh": fresh, "staleSec": stale}
-    else:
+    elif "vix" not in out:
         try:
             pct = await td_quote_pct("VIX")
             if pct is not None:
                 out["vix"] = {"z": float(pct), "w": 0.20, "fresh": True, "staleSec": 0}
             else:
-                out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+                ap = await fetch_alpha_global_quote_pct("VIX")
+                if ap is not None:
+                    out["vix"] = {"z": float(ap), "w": 0.20, "fresh": True, "staleSec": 0}
+                else:
+                    out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
         except Exception:
-            out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
+            ap = await fetch_alpha_global_quote_pct("VIX")
+            if ap is not None:
+                out["vix"] = {"z": float(ap), "w": 0.20, "fresh": True, "staleSec": 0}
+            else:
+                out["vix"] = {"z": 0.0, "w": 0.20, "fresh": False, "staleSec": None}
 
     if tnx and tnx.get("candles"):
         last_ts = tnx["candles"][-1]["t"]
@@ -2475,14 +2516,14 @@ async def _compute_drivers_payload(candles: Optional[list] = None, last_price: O
             out["real10y"] = {"z": 0.0, "w": 0.35, "fresh": False, "staleSec": None}
 
     # Risk-on proxy: +ES=F and -VIX
-    if es and es.get("candles") and vix and vix.get("candles"):
+    if "risk_on" not in out and es and es.get("candles") and vix and vix.get("candles"):
         last_ts = min(es["candles"][-1]["t"], vix["candles"][-1]["t"])
         fresh, stale = _staleness(last_ts, end_ms, fresh_threshold_min=30)
         z_es = _z_from_tail([c["c"] for c in es["candles"]])
         z_vix = _z_from_tail([c["c"] for c in vix["candles"]])
         z_risk = 0.60 * z_es - 0.40 * z_vix
         out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": fresh, "staleSec": stale}
-    else:
+    elif "risk_on" not in out:
         # Fallback using TD percent changes for SPY and VIX
         try:
             spy_pct = await td_quote_pct("SPY")
@@ -2493,9 +2534,25 @@ async def _compute_drivers_payload(candles: Optional[list] = None, last_price: O
             elif spy_pct is not None:
                 out["risk_on"] = {"z": float(spy_pct), "w": 0.10, "fresh": True, "staleSec": 0}
             else:
-                out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
+                sp = await fetch_alpha_global_quote_pct("SPY")
+                vx = await fetch_alpha_global_quote_pct("VIX")
+                if sp is not None and vx is not None:
+                    z_risk = 0.60 * float(sp) - 0.40 * float(vx)
+                    out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": True, "staleSec": 0}
+                elif sp is not None:
+                    out["risk_on"] = {"z": float(sp), "w": 0.10, "fresh": True, "staleSec": 0}
+                else:
+                    out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
         except Exception:
-            out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
+            sp = await fetch_alpha_global_quote_pct("SPY")
+            vx = await fetch_alpha_global_quote_pct("VIX")
+            if sp is not None and vx is not None:
+                z_risk = 0.60 * float(sp) - 0.40 * float(vx)
+                out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": True, "staleSec": 0}
+            elif sp is not None:
+                out["risk_on"] = {"z": float(sp), "w": 0.10, "fresh": True, "staleSec": 0}
+            else:
+                out["risk_on"] = {"z": 0.0, "w": 0.10, "fresh": False, "staleSec": None}
 
     # DO context driver (distance to DO/PDH/PDL, signed by current price vs DO)
     try:
@@ -3506,3 +3563,70 @@ async def _generate_signal(symbol: str = "XAUUSD") -> dict | None:
         return sig
     except Exception:
         return None
+
+async def _alpha_fx_daily_pair_latest_prev(from_symbol: str, to_symbol: str) -> Optional[Tuple[float, float]]:
+    if not ALPHA_KEY:
+        return None
+    key = ("alpha_fx_daily", f"{from_symbol}/{to_symbol}")
+    hit = _cache_get(key, ttl_ms=6 * 60 * 60 * 1000)
+    if hit is not None:
+        return hit
+    params = {
+        "function": "FX_DAILY",
+        "from_symbol": from_symbol,
+        "to_symbol": to_symbol,
+        "outputsize": "compact",
+        "apikey": ALPHA_KEY,
+    }
+    r = await _client.get(ALPHA_BASE, params=params, timeout=15)
+    r.raise_for_status()
+    j = r.json()
+    series = (j or {}).get("Time Series FX (Daily)")
+    if not isinstance(series, dict) or not series:
+        return None
+    dates = sorted(series.keys(), reverse=True)
+    if len(dates) < 2:
+        return None
+    try:
+        last = float(series[dates[0]].get("4. close"))
+        prev = float(series[dates[1]].get("4. close"))
+        _cache_put(key, (last, prev))
+        return (last, prev)
+    except Exception:
+        return None
+
+async def alpha_dxy_pct() -> Optional[float]:
+    """Compute DXY percent change via Alpha Vantage FX_DAILY pairs; fallback to UUP percent if needed."""
+    if not ALPHA_KEY:
+        return None
+    DXY_CONST = 50.14348112
+    WEIGHTS = [
+        ("EUR", "USD", -0.576),
+        ("USD", "JPY", 0.136),
+        ("GBP", "USD", -0.119),
+        ("USD", "CAD", 0.091),
+        ("USD", "SEK", 0.042),
+        ("USD", "CHF", 0.036),
+    ]
+    try:
+        tasks = [_alpha_fx_daily_pair_latest_prev(fr, to) for fr, to, _ in WEIGHTS]
+        pairs = await asyncio.gather(*tasks)
+        if any(p is None for p in pairs):
+            # ETF proxy percent change fallback
+            return await fetch_alpha_global_quote_pct("UUP")
+        def dxy_from(values: List[Tuple[float, float]], idx: int) -> float:
+            v = DXY_CONST
+            for (fr, to, w), pair in zip(WEIGHTS, values):
+                rate = pair[idx]
+                v *= rate ** w
+            return v
+        last_val = dxy_from(pairs, 0)
+        prev_val = dxy_from(pairs, 1)
+        if prev_val == 0:
+            return None
+        return ((last_val - prev_val) / prev_val) * 100.0
+    except Exception:
+        try:
+            return await fetch_alpha_global_quote_pct("UUP")
+        except Exception:
+            return None
