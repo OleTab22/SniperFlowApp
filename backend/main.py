@@ -511,7 +511,7 @@ async def websocket_endpoint(websocket: WebSocket):
             # Try TwelveData quote first if available
             try:
                 if cached_twelvedata_quote is not None:
-                    q = await cached_twelvedata_quote("XAUUSD")
+                    q = await cached_twelvedata_quote("XAUUSD", ttl_sec=300)
                     bid = q.get("bid")
                     ask = q.get("ask")
                     last = q.get("last")

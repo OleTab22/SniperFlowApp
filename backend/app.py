@@ -32,6 +32,12 @@ import lzma
 import xml.etree.ElementTree as ET
 from dateutil import parser as dateparser
 import struct
+def _decompress_lzma(data: bytes) -> bytes:
+    try:
+        return lzma.decompress(data)
+    except Exception:
+        return b""
+
 
 NY = pytz.timezone("America/New_York")
 ALPHA_BASE = "https://www.alphavantage.co/query"
@@ -130,13 +136,8 @@ async def levels_today_cached(symbol: str, candles: Optional[list] = None) -> Op
     if hit and now < hit[0]:
         return hit[1]
     try:
-        # Preferred PDH/PDL from GoldAPI daily; fallback to Stooq daily
-        try:
-            prev_levels = await goldapi_pdh_pdl(symbol)
-            if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
-                raise RuntimeError("incomplete goldapi pdh/pdl")
-        except Exception:
-            prev_levels = await stooq_daily_pdh_pdl(symbol)
+        # Preferred PDH/PDL from Stooq daily
+        prev_levels = await stooq_daily_pdh_pdl(symbol)
         # Final fallback: derive PDH/PDL from candles if still missing
         if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
             try:
@@ -834,7 +835,7 @@ async def fetch_dukascopy(symbol: str, hours_back: int = 4):
         url = f"{base}/{instr}/{yyyy:04d}/{mm0:02d}/{dd:02d}/{hh:02d}h_ticks.bi5"
         headers = {"Referer": "https://www.dukascopy.com/trading-tools/widgets/quotes/historical_data_feed"}
         async with httpx.AsyncClient(headers=headers) as _client:
-            log.info("duka: fetching %s", url)
+            logging.info("duka: fetching %s", url)
             r = await _client.get(url, timeout=20)
             r.raise_for_status()
             return _decompress_lzma(r.content)
@@ -2124,7 +2125,7 @@ async def home(nocache: bool = False):
         spread_pts = None
         # Try TwelveData first
         try:
-            q = await cached_twelvedata_quote("XAUUSD", ttl_sec=5)
+            q = await cached_twelvedata_quote("XAUUSD", ttl_sec=300)
             bid = q.get("bid")
             ask = q.get("ask")
             if bid and ask:
@@ -2881,7 +2882,7 @@ async def v1_price_tick(symbol: str = "XAUUSD", source: str | None = None):
             bid = gq.get("bid"); ask = gq.get("ask"); last = gq.get("last")
         async def _use_td():
             nonlocal bid, ask, last
-            q = await fetch_twelvedata_quote(symbol)
+            q = await cached_twelvedata_quote(symbol, ttl_sec=300)
             bid = q.get("bid"); ask = q.get("ask"); last = q.get("last")
         try:
             if source == "goldapi":
@@ -3050,7 +3051,7 @@ async def ws_ticks(ws: WebSocket):
                 bid, ask, last = None, None, None
                 # Prefer TD for ticks; avoid GoldAPI (100 req/month)
                 try:
-                    q = await cached_twelvedata_quote("XAUUSD", ttl_sec=5)
+                    q = await cached_twelvedata_quote("XAUUSD", ttl_sec=300)
                     bid = q.get("bid")
                     ask = q.get("ask")
                     last = q.get("last")
