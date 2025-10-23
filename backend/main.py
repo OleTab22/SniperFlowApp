@@ -30,6 +30,7 @@ log = logging.getLogger("sniperflow")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TD_KEY = os.getenv("TWELVEDATA_API_KEY")
 FRED_KEY = os.getenv("FRED_API_KEY")
+ENABLE_ML_COLLECTOR = (os.getenv("ENABLE_ML_COLLECTOR", "true").lower() == "true")
 
 HEADERS = {"User-Agent": "sniperflow/1.0 (+contact)", "Accept": "application/json"}
 _CACHE: dict[str, tuple[float, object]] = {}
@@ -694,13 +695,16 @@ async def startup_event():
             log.warning("Migration attempt %s failed: %s (retrying in %ss)", i+1, e, wait)
             await asyncio.sleep(wait)
     
-    # Start ML data collector in background
-    try:
-        from .ml_collector import start_background_collector
-        start_background_collector()
-        log.info("ML data collector started")
-    except Exception as e:
-        log.warning(f"ML collector not started: {e}")
+    # Start ML data collector in background (guarded by env)
+    if ENABLE_ML_COLLECTOR:
+        try:
+            from .ml_collector import start_background_collector
+            start_background_collector()
+            log.info("ML data collector started")
+        except Exception as e:
+            log.warning(f"ML collector not started: {e}")
+    else:
+        log.info("ML data collector disabled by ENABLE_ML_COLLECTOR=false")
     # Start free official calendar sync
     try:
         start_calendar_sync_background()
@@ -717,6 +721,12 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     await data_shutdown()
+    # Best-effort stop of ML collector if running
+    try:
+        from .ml_collector import stop_background_collector
+        stop_background_collector()
+    except Exception:
+        pass
 
 # ---------- MODELS ----------
 class JournalIn(BaseModel):
