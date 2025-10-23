@@ -54,6 +54,7 @@ ALPHA_PCT_TTL_MS = int(os.getenv("ALPHA_PCT_TTL_MS", "300000"))  # default 5 min
 
 _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
+_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
 
 # Lightweight in-memory signals store and websocket client registry
 _signals_store: list[dict] = []
@@ -195,6 +196,13 @@ def _cache_get(key: Tuple[str, str], ttl_ms: int):
 
 def _cache_put(key: Tuple[str, str], val: Any):
     _cache[key] = (now_utc_ms(), val)
+    # best-effort: release any waiting locks
+    try:
+        lk = _locks.get(key)
+        if lk and lk.locked():
+            pass
+    except Exception:
+        pass
 
 def _yf_symbol_xau() -> list[str]:
     # Prefer spot XAUUSD=X, then GC=F (futures)
@@ -729,9 +737,18 @@ async def cached_twelvedata_quote(symbol: str, ttl_sec: int = 60) -> Dict[str, f
     hit = _cache_get(key, ttl_ms=ttl_sec * 1000)
     if hit is not None:
         return hit
-    q = await fetch_twelvedata_quote(symbol)
-    _cache_put(key, q)
-    return q
+    # deduplicate concurrent misses (thundering herd)
+    lk = _locks.get(key)
+    if lk is None:
+        lk = asyncio.Lock()
+        _locks[key] = lk
+    async with lk:
+        hit2 = _cache_get(key, ttl_ms=ttl_sec * 1000)
+        if hit2 is not None:
+            return hit2
+        q = await fetch_twelvedata_quote(symbol)
+        _cache_put(key, q)
+        return q
 
 async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
     """Percent change from Twelve Data quote (cached)."""
