@@ -795,6 +795,58 @@ async def td_quote_pct(symbol: str, ttl_sec: int = 120) -> Optional[float]:
     return pct
 
 
+async def td_quote_pct_batch(symbols: list[str], ttl_sec: int = 300) -> Dict[str, Optional[float]]:
+    """Fetch percent_change for multiple symbols in one TD call. Returns map symbol->pct or None.
+    Strongly reduces quota usage vs per-symbol calls.
+    """
+    if not TWELVE_KEY:
+        return {s: None for s in symbols}
+    # Normalize and build cache key independent of order
+    syms = [s.strip().upper() for s in symbols if s and s.strip()]
+    if not syms:
+        return {}
+    cache_key = ("td_pct_batch", ",".join(sorted(syms)))
+    hit = _cache_get(cache_key, ttl_ms=ttl_sec * 1000)
+    if hit is not None:
+        return hit
+    if _is_td_blocked():
+        return {s: None for s in syms}
+    url = "https://api.twelvedata.com/quote"
+    params = {"symbol": ",".join(syms), "apikey": TWELVE_KEY}
+    r = await _client.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    j = r.json()
+    out: Dict[str, Optional[float]] = {s: None for s in syms}
+    try:
+        # TD multi-symbol responses are typically a dict keyed by symbol
+        if isinstance(j, dict) and all(k in j or k.replace("/", "_") in j for k in syms):
+            for s in syms:
+                node = j.get(s) or j.get(s.replace("/", "_"))
+                if isinstance(node, dict) and node.get("status") != "error":
+                    pct_raw = str(node.get("percent_change", "0")).replace("%", "")
+                    try:
+                        out[s] = float(pct_raw)
+                    except Exception:
+                        out[s] = None
+        # Fallback: some plans return a list in "data"
+        elif isinstance(j, dict) and isinstance(j.get("data"), list):
+            for node in j.get("data", []):
+                s = (node.get("symbol") or node.get("ticker") or "").upper()
+                if s in out and node.get("status") != "error":
+                    pct_raw = str(node.get("percent_change", "0")).replace("%", "")
+                    try:
+                        out[s] = float(pct_raw)
+                    except Exception:
+                        out[s] = None
+        else:
+            # Unknown payload; do not fail hard
+            pass
+    except Exception:
+        pass
+    _cache_put(cache_key, out)
+    return out
+
+
 async def fetch_goldapi_quote(symbol: str) -> Dict[str, float]:
     """GoldAPI realtime quote for XAU/USD. Returns {bid, ask, last, open}."""
     if not ENABLE_GOLDAPI:
@@ -2477,7 +2529,10 @@ async def _compute_drivers_payload(candles: Optional[list] = None, last_price: O
     # Prefer Alpha (5-30m TTL) for DXY/VIX/SPY; fallback to TwelveData
     av_dxy = av_vix = av_spy = None
     try:
-        av_vix = await fetch_alpha_global_quote_pct("VIX")
+        # Alpha rarely serves ^VIX; use VIXY ETF as primary proxy, fallback to VIX symbol
+        av_vix = await fetch_alpha_global_quote_pct("VIXY")
+        if av_vix is None:
+            av_vix = await fetch_alpha_global_quote_pct("VIX")
     except Exception:
         av_vix = None
     try:
@@ -2499,17 +2554,15 @@ async def _compute_drivers_payload(candles: Optional[list] = None, last_price: O
             z_risk = 0.60 * float(av_spy) - 0.40 * float(av_vix)
         out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": True, "staleSec": 0}
 
-    # TD fallback (cached) if Alpha not available
+    # TD fallback (batch, cached) if Alpha not available
     if "dxy" not in out or "vix" not in out or "risk_on" not in out:
         try:
-            td_dxy = td_vix = td_spy = None
-            td_dxy, td_vix, td_spy = await asyncio.gather(
-                td_quote_pct("DXY"),
-                td_quote_pct("VIX"),
-                td_quote_pct("SPY"),
-            )
+            td_map = await td_quote_pct_batch(["DXY", "VIX", "SPY"], ttl_sec=300)
         except Exception:
-            td_dxy = td_vix = td_spy = None
+            td_map = {"DXY": None, "VIX": None, "SPY": None}
+        td_dxy = td_map.get("DXY")
+        td_vix = td_map.get("VIX")
+        td_spy = td_map.get("SPY")
         if "dxy" not in out and td_dxy is not None:
             out["dxy"] = {"z": float(-td_dxy), "w": 0.35, "fresh": True, "staleSec": 0}
         if "vix" not in out and td_vix is not None:
