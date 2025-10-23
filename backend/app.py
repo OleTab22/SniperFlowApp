@@ -51,6 +51,7 @@ GOLDAPI_BASE = "https://www.goldapi.io/api"
 GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
 ENABLE_GOLDAPI = (os.getenv("ENABLE_GOLDAPI", "false").lower() == "true")
 ALPHA_PCT_TTL_MS = int(os.getenv("ALPHA_PCT_TTL_MS", "300000"))  # default 5 minutes
+ENABLE_YAHOO = (os.getenv("ENABLE_YAHOO", "false").lower() == "true")
 
 _client: Optional[httpx.AsyncClient] = None
 _cache: Dict[Tuple[str, str], Tuple[int, Any]] = {}
@@ -137,8 +138,18 @@ async def levels_today_cached(symbol: str, candles: Optional[list] = None) -> Op
     if hit and now < hit[0]:
         return hit[1]
     try:
-        # Preferred PDH/PDL from Stooq daily
-        prev_levels = await stooq_daily_pdh_pdl(symbol)
+        # Preferred PDH/PDL from GoldAPI daily high/low; fallback to Stooq
+        prev_levels = {"PDH": None, "PDL": None}
+        try:
+            gq = await cached_goldapi_quote(symbol, ttl_sec=60 * 60 * 12)
+            ph = gq.get("high")
+            pl = gq.get("low")
+            if ph is not None and pl is not None:
+                prev_levels = {"PDH": ph, "PDL": pl}
+        except Exception:
+            pass
+        if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
+            prev_levels = await stooq_daily_pdh_pdl(symbol)
         # Final fallback: derive PDH/PDL from candles if still missing
         if prev_levels.get("PDH") is None or prev_levels.get("PDL") is None:
             try:
@@ -209,8 +220,10 @@ def _yf_symbol_xau() -> list[str]:
     return ["XAUUSD=X", "GC=F"]
 
 async def yahoo_last(sym: str) -> Optional[float]:
+    if not ENABLE_YAHOO:
+        return None
     key = ("yf_last", sym)
-    hit = _cache_get(key, ttl_ms=30_000)
+    hit = _cache_get(key, ttl_ms=30 * 60 * 1000)  # 30 minutes
     if hit is not None:
         return hit
     if _is_yf_blocked():
@@ -261,8 +274,10 @@ async def yahoo_quote_pct(sym: str) -> Optional[float]:
     return val
 
 async def yahoo_series_5m(sym: str) -> Optional[Tuple[list, float]]:
+    if not ENABLE_YAHOO:
+        return None
     key = ("yf_series5m", sym)
-    hit = _cache_get(key, ttl_ms=30_000)
+    hit = _cache_get(key, ttl_ms=30 * 60 * 1000)  # 30 minutes
     if hit is not None:
         return hit
     if _is_yf_blocked():
@@ -935,14 +950,15 @@ async def get_candles(symbol: str):
                         return (_build_synthetic_candles_from_last(last), last)
                 except Exception:
                     pass
-                # Try Yahoo series before other paths
-                try:
-                    for s in _yf_symbol_xau():
-                        ys = await yahoo_series_5m(s)
-                        if ys:
-                            return ys
-                except Exception:
-                    pass
+                # Try Yahoo series before other paths (if enabled)
+                if ENABLE_YAHOO:
+                    try:
+                        for s in _yf_symbol_xau():
+                            ys = await yahoo_series_5m(s)
+                            if ys:
+                                return ys
+                    except Exception:
+                        pass
                 # Final fallbacks
                 try:
                     return await fetch_stooq(symbol)
@@ -983,16 +999,19 @@ async def get_candles(symbol: str):
         except Exception as e_alpha:
                 # Try Yahoo 5m series as last-resort before other CSV/BI5 sources
             try:
-                ys = _yf_symbol_xau()
-                ypayload = None
-                for s in ys:
-                    ypayload = await yahoo_series_5m(s)
+                if ENABLE_YAHOO:
+                    ys = _yf_symbol_xau()
+                    ypayload = None
+                    for s in ys:
+                        ypayload = await yahoo_series_5m(s)
+                        if ypayload:
+                            break
                     if ypayload:
-                        break
-                if ypayload:
-                    payload = ypayload
+                        payload = ypayload
+                    else:
+                        raise RuntimeError("Yahoo series unavailable")
                 else:
-                    raise RuntimeError("Yahoo series unavailable")
+                    raise RuntimeError("Yahoo disabled")
             except Exception as e_yahoo_series:
                 # Try a realtime Alpha FX last and synthesize candles to keep the app usable
                 try:
@@ -1346,6 +1365,8 @@ def _find_sast_midnight_open(candles) -> Optional[float]:
 
 async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
     """Fetch 5m intraday candles for a Yahoo symbol."""
+    if not ENABLE_YAHOO:
+        return None
     if _is_yf_blocked():
         return None
     res = await yahoo_series_5m(symbol)
@@ -1357,6 +1378,8 @@ async def _fetch_intraday_yf_series(symbol: str) -> Optional[Dict[str, Any]]:
 
 async def _fetch_intraday_yf_series_multi(symbols):
     """Try a list of Yahoo symbols in order; return first successful series."""
+    if not ENABLE_YAHOO:
+        return None
     for sym in symbols:
         try:
             data = await _fetch_intraday_yf_series(sym)
@@ -2167,6 +2190,26 @@ async def home(nocache: bool = False):
             except Exception:
                 provider_status["gapi_quote:XAUUSD"] = False
 
+        # Ensure 24h high/low via GoldAPI when available, else fallback from candles
+        high24h_calc = None
+        low24h_calc = None
+        try:
+            if ENABLE_GOLDAPI:
+                gq_hl = await cached_goldapi_quote("XAUUSD", ttl_sec=60 * 60 * 12)
+                high24h_calc = gq_hl.get("high")
+                low24h_calc = gq_hl.get("low")
+        except Exception:
+            pass
+        if high24h_calc is None or low24h_calc is None:
+            try:
+                start24 = end_ms - 24 * 60 * 60 * 1000
+                w24 = [c for c in candles if c["t"] >= start24]
+                if w24:
+                    high24h_calc = max(c.get("h") for c in w24 if c.get("h") is not None)
+                    low24h_calc = min(c.get("l") for c in w24 if c.get("l") is not None)
+            except Exception:
+                pass
+
         # Quality state from spread/latency with clamping for outliers
         latency_ms = 0
         if spread_pts is not None:
@@ -2332,8 +2375,7 @@ async def home(nocache: bool = False):
                 "closes": [c["c"] for c in intraday] if ('intraday' in locals() and intraday) else ([_ for _ in []]),
                 "bid": bid,
                 "ask": ask,
-                # 24h high/low: prefer GoldAPI if present, else candles
-                **(lambda: (lambda gq: {"high24h": gq.get("high"), "low24h": gq.get("low")}) (gq) if 'gq' in locals() and isinstance(gq, dict) else {})(),
+                # 24h high/low (GoldAPI preferred, else candles)
                 **({"high24h": high24h_calc} if high24h_calc is not None else {}),
                 **({"low24h": low24h_calc} if low24h_calc is not None else {}),
             },
@@ -2432,25 +2474,51 @@ async def _compute_drivers_payload(candles: Optional[list] = None, last_price: O
     end_ms = now_utc_ms()
     out = {}
 
-    # Prefer TwelveData percent changes for DXY/VIX/SPY
-    td_dxy = td_vix = td_spy = None
+    # Prefer Alpha (5-30m TTL) for DXY/VIX/SPY; fallback to TwelveData
+    av_dxy = av_vix = av_spy = None
     try:
-        td_dxy, td_vix, td_spy = await asyncio.gather(
-            td_quote_pct("DXY"),
-            td_quote_pct("VIX"),
-            td_quote_pct("SPY"),
-        )
+        av_vix = await fetch_alpha_global_quote_pct("VIX")
     except Exception:
-        td_dxy = td_vix = td_spy = None
-    if td_dxy is not None:
-        out["dxy"] = {"z": float(-td_dxy), "w": 0.35, "fresh": True, "staleSec": 0}
-    if td_vix is not None:
-        out["vix"] = {"z": float(td_vix), "w": 0.20, "fresh": True, "staleSec": 0}
-    if td_spy is not None:
-        z_risk = float(td_spy)
-        if td_vix is not None:
-            z_risk = 0.60 * float(td_spy) - 0.40 * float(td_vix)
+        av_vix = None
+    try:
+        av_spy = await fetch_alpha_global_quote_pct("SPY")
+    except Exception:
+        av_spy = None
+    try:
+        av_dxy = await alpha_dxy_pct()
+    except Exception:
+        av_dxy = None
+
+    if av_dxy is not None:
+        out["dxy"] = {"z": float(-av_dxy), "w": 0.35, "fresh": True, "staleSec": 0}
+    if av_vix is not None:
+        out["vix"] = {"z": float(av_vix), "w": 0.20, "fresh": True, "staleSec": 0}
+    if av_spy is not None:
+        z_risk = float(av_spy)
+        if av_vix is not None:
+            z_risk = 0.60 * float(av_spy) - 0.40 * float(av_vix)
         out["risk_on"] = {"z": float(z_risk), "w": 0.10, "fresh": True, "staleSec": 0}
+
+    # TD fallback (cached) if Alpha not available
+    if "dxy" not in out or "vix" not in out or "risk_on" not in out:
+        try:
+            td_dxy = td_vix = td_spy = None
+            td_dxy, td_vix, td_spy = await asyncio.gather(
+                td_quote_pct("DXY"),
+                td_quote_pct("VIX"),
+                td_quote_pct("SPY"),
+            )
+        except Exception:
+            td_dxy = td_vix = td_spy = None
+        if "dxy" not in out and td_dxy is not None:
+            out["dxy"] = {"z": float(-td_dxy), "w": 0.35, "fresh": True, "staleSec": 0}
+        if "vix" not in out and td_vix is not None:
+            out["vix"] = {"z": float(td_vix), "w": 0.20, "fresh": True, "staleSec": 0}
+        if "risk_on" not in out and (td_spy is not None or td_vix is not None):
+            zr = float(td_spy) if td_spy is not None else 0.0
+            if td_spy is not None and td_vix is not None:
+                zr = 0.60 * float(td_spy) - 0.40 * float(td_vix)
+            out["risk_on"] = {"z": float(zr), "w": 0.10, "fresh": True, "staleSec": 0}
 
     # DXY fallback chain: DX-Y.NYB -> DX=F -> UUP -> ^DXY
     dxy = await _fetch_intraday_yf_series_multi(["DX-Y.NYB", "DX=F", "UUP", "^DXY"])

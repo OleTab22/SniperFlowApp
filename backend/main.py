@@ -838,9 +838,27 @@ def _score_from(drivers: list[dict]) -> int:
 @app.get("/v1/nowcast")
 async def nowcast():
     async def build():
-        # cache each provider to keep well below quotas
-        dxy = await _cached("pct:DXY", 120, lambda: td_quote_pct("DXY"))
-        spy = await _cached("pct:SPY", 120, lambda: td_quote_pct("SPY"))
+        # Prefer Alpha for pct (cached), fallback to TwelveData; FRED for US10Y
+        async def _dxy_pct():
+            try:
+                from .app import alpha_dxy_pct
+                p = await alpha_dxy_pct()
+                if p is not None:
+                    return p
+            except Exception:
+                pass
+            return await td_quote_pct("DXY")
+        async def _spy_pct():
+            try:
+                from .app import fetch_alpha_global_quote_pct
+                p = await fetch_alpha_global_quote_pct("SPY")
+                if p is not None:
+                    return p
+            except Exception:
+                pass
+            return await td_quote_pct("SPY")
+        dxy = await _cached("pct:DXY", 300, _dxy_pct)
+        spy = await _cached("pct:SPY", 300, _spy_pct)
         us10y = await _cached("delta:DGS10", 6 * 3600, fred_us10y_delta)
 
         drivers = []
