@@ -4,23 +4,20 @@ package com.example.sniperflow
 // R already in this package via import; redundant qualifier warnings will be fixed below
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.View
-import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.content.res.ResourcesCompat
-import androidx.core.graphics.toColorInt
 import androidx.core.view.isEmpty
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
+import com.example.sniperflow.data.journal.JournalDao
 import com.example.sniperflow.network.PriceWsClient
 import com.example.sniperflow.network.RetrofitModule
 import com.example.sniperflow.notifications.NotificationsActivity
@@ -30,23 +27,30 @@ import com.example.sniperflow.ui.BiasRingView
 import com.example.sniperflow.ui.SparklineView
 import com.example.sniperflow.ui.home.AlertsAdapter
 import com.example.sniperflow.ui.journal.JournalActivity
-import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.chip.Chip
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.snackbar.Snackbar
 import com.squareup.moshi.Moshi
+import com.example.sniperflow.util.LocaleAwareActivity
+import com.example.sniperflow.util.LocaleManager
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.TimeUnit
 import com.example.sniperflow.domain.metrics.UserTimezone
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : LocaleAwareActivity() {
     private var countdownJob: Job? = null
     private var periodicJob: Job? = null
     private var lastRefreshAt: Long = 0L
@@ -79,6 +83,25 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Check onboarding - redirect if not completed
+        lifecycleScope.launch {
+            val profileRepo = com.example.sniperflow.data.user.UserProfileRepository.create(this@MainActivity)
+            val profile = profileRepo.getProfile()
+            val normalizedLang = LocaleManager.normalize(profile.language)
+            val storedLang = LocaleManager.getStoredLanguage(this@MainActivity)
+            if (storedLang != normalizedLang) {
+                LocaleManager.setStoredLanguage(applicationContext, normalizedLang)
+                recreate()
+                return@launch
+            }
+            if (!profile.onboardingCompleted) {
+                startActivity(Intent(this@MainActivity, com.example.sniperflow.onboarding.OnboardingActivity::class.java))
+                finish()
+                return@launch
+            }
+        }
+        
         setContentView(R.layout.activity_main)
 
         // Quick actions
@@ -139,10 +162,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Top bar actions
-        findViewById<ImageView>(R.id.btnSettings)?.setOnClickListener {
+        findViewById<MaterialButton>(R.id.btnSettings)?.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<ImageView>(R.id.btnNotifications)?.setOnClickListener {
+        findViewById<MaterialButton>(R.id.btnNotifications)?.setOnClickListener {
             startActivity(Intent(this, NotificationsActivity::class.java))
         }
 
@@ -207,21 +230,6 @@ class MainActivity : AppCompatActivity() {
         bottomNav?.selectedItemId = R.id.nav_home
 
 
-        // Manual refresh with cooldown + haptic
-        findViewById<MaterialButton>(R.id.refreshBtn)?.setOnClickListener { v ->
-            val cooldownMs = SettingsRepository(this).load().second
-            val tag = v.getTag(R.id.refreshBtn) as? Long ?: 0L
-            val now = System.currentTimeMillis()
-            if (now - tag < cooldownMs) {
-                Snackbar.make(v, "Please wait…", Snackbar.LENGTH_SHORT).show()
-            } else {
-                v.setTag(R.id.refreshBtn, now)
-                // light haptic feedback
-                try { v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) } catch (_: Throwable) {}
-                fetchAndRender()
-            }
-        }
-
         // Auto-refresh loop respecting cooldown
         periodicJob?.cancel()
         periodicJob = lifecycleScope.launch {
@@ -236,8 +244,8 @@ class MainActivity : AppCompatActivity() {
                     val ok = RetrofitModule.api(BuildConfig.BASE_URL).health()
                     val status = ok["status"]?.toString()?.lowercase(Locale.getDefault())
                     val okFlag = (status == "ok") || (ok["ok"] == true)
-                    if (okFlag) setConnStatusGreen() else setConnStatusAmber()
-                }.onFailure { setConnStatusRed() }
+                    if (okFlag) updateStatusChip(getString(R.string.polling_label), true) else updateStatusChip(getString(R.string.polling_label), false)
+                }.onFailure { updateStatusChip(getString(R.string.offline_label), false) }
                 delay(5_000)
             }
         }
@@ -246,25 +254,21 @@ class MainActivity : AppCompatActivity() {
         runCatching {
             val url = BuildConfig.BASE_URL.replace("http", "ws") + "ticks"
             wsClient = PriceWsClient(OkHttpClient(), url,
-                onTick = { ts, bid, ask ->
-                    // Update connection dot and maybe compute quality (latency/spread) later
-                    setConnStatusGreen()
-                    // Update status label to WS
-                    findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label)
+                onTick = { _, _, _ ->
+                    // Update connection chip
+                    updateStatusChip(getString(R.string.ws_label), true)
                 },
                 onState = { st ->
                     when (st) {
-                        PriceWsClient.State.CONNECTING -> { isWsOpen = false; setConnStatusAmber() }
-                        PriceWsClient.State.OPEN -> { isWsOpen = true; setConnStatusGreen(); findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.ws_label); lastApiOkAt = System.currentTimeMillis() }
+                        PriceWsClient.State.CONNECTING -> { isWsOpen = false; updateStatusChip(getString(R.string.polling_label), false) }
+                        PriceWsClient.State.OPEN -> { isWsOpen = true; updateStatusChip(getString(R.string.ws_label), true); lastApiOkAt = System.currentTimeMillis() }
                         PriceWsClient.State.CLOSED, PriceWsClient.State.FAILED -> {
                             isWsOpen = false
                             val recentOk = System.currentTimeMillis() - lastApiOkAt < 30_000L
                             if (recentOk) {
-                                setConnStatusAmber()
-                                findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.polling_label)
+                                updateStatusChip(getString(R.string.polling_label), false)
                             } else {
-                                setConnStatusRed()
-                                findViewById<TextView>(R.id.statusLabel)?.text = getString(R.string.offline_label)
+                                updateStatusChip(getString(R.string.offline_label), false)
                             }
                         }
                     }
@@ -305,16 +309,37 @@ class MainActivity : AppCompatActivity() {
         val pillNY = findViewById<TextView>(R.id.newyorkBtn)
 
         val alertsList = findViewById<RecyclerView>(R.id.listAlerts)
-        val alertsAdapter = AlertsAdapter { /* open alert detail */ }
+        var currentHomeLevels: com.example.sniperflow.network.LevelsSection? = null
+        val gateReceiptsMap: MutableMap<String, String> = mutableMapOf() // alertId -> receipts JSON
+        val alertsAdapter = AlertsAdapter { alert ->
+            val intent = Intent(this@MainActivity, com.example.sniperflow.ui.alerts.AlertDetailActivity::class.java)
+            intent.putExtra("alert_id", alert.id)
+            intent.putExtra("alert_title", alert.title)
+            intent.putExtra("alert_ts", System.currentTimeMillis() - ((alert.ageSec ?: 0) * 1000L))
+            intent.putExtra("actionable", alert.severity == "actionable")
+            // Use cached levels if available
+            currentHomeLevels?.let { levels ->
+                intent.putExtra("do_price", levels.doLevel?.price)
+                intent.putExtra("pdh", levels.pdh?.price)
+                intent.putExtra("pdl", levels.pdl?.price)
+            }
+            // Add gate receipts if available
+            alert.id?.let { id ->
+                gateReceiptsMap[id]?.let { receiptsJson ->
+                    intent.putExtra("gate_receipts_json", receiptsJson)
+                }
+            }
+            startActivity(intent)
+        }
         alertsList?.adapter = alertsAdapter
         alertsList?.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
 
         fun highlightSessionsSAST() {
             // Session windows relative to selected timezone (default Africa/Johannesburg)
             val tz = UserTimezone.timeZone()
-            val now = java.util.Calendar.getInstance(tz)
-            val h = now.get(java.util.Calendar.HOUR_OF_DAY)
-            val m = now.get(java.util.Calendar.MINUTE)
+            val now = Calendar.getInstance(tz)
+            val h = now.get(Calendar.HOUR_OF_DAY)
+            val m = now.get(Calendar.MINUTE)
             fun inRange(startH: Int, startM: Int, endH: Int, endM: Int): Boolean {
                 val nowMin = h * 60 + m
                 val sMin = startH * 60 + startM
@@ -345,13 +370,13 @@ class MainActivity : AppCompatActivity() {
         // Session pill tap: show minutes left in SAST
         fun minutesLeft(endH: Int, endM: Int): Int {
             val tz = UserTimezone.timeZone()
-            val now = java.util.Calendar.getInstance(tz)
-            val end = java.util.Calendar.getInstance(tz)
-            end.set(java.util.Calendar.HOUR_OF_DAY, endH)
-            end.set(java.util.Calendar.MINUTE, endM)
-            end.set(java.util.Calendar.SECOND, 0)
-            end.set(java.util.Calendar.MILLISECOND, 0)
-            if (end.before(now)) end.add(java.util.Calendar.DAY_OF_MONTH, 1)
+            val now = Calendar.getInstance(tz)
+            val end = Calendar.getInstance(tz)
+            end.set(Calendar.HOUR_OF_DAY, endH)
+            end.set(Calendar.MINUTE, endM)
+            end.set(Calendar.SECOND, 0)
+            end.set(Calendar.MILLISECOND, 0)
+            if (end.before(now)) end.add(Calendar.DAY_OF_MONTH, 1)
             val diffMs = end.timeInMillis - now.timeInMillis
             return (diffMs / 60000L).toInt()
         }
@@ -371,12 +396,21 @@ class MainActivity : AppCompatActivity() {
 
         val swipe = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipe)
         swipe?.isRefreshing = true
-        // Connection dot: set amber while loading
-        setConnStatusAmber()
+        // Connection chip: set loading state
+        updateStatusChip(getString(R.string.polling_label), false)
         lifecycleScope.launch {
             try {
                 Timber.i("Home: fetching consolidated payload…")
                 val home = api.home()
+
+                val currentSessionKey = home.sessions?.current
+                val (profile, journalStats) = withContext(Dispatchers.IO) {
+                    val profileRepo = com.example.sniperflow.data.user.UserProfileRepository.create(this@MainActivity)
+                    val profile = profileRepo.getProfile()
+                    val dao = (application as App).db.journalDao()
+                    val stats = calculateJournalStats(dao, currentSessionKey)
+                    profile to stats
+                }
 
                 // Price panel
                 home.price?.let { p ->
@@ -397,13 +431,14 @@ class MainActivity : AppCompatActivity() {
                     p.closes?.let { miniChart.setSeries(it) }
                 }
                 // Connection healthy
-                setConnStatusGreen(); lastApiOkAt = System.currentTimeMillis()
-                // Status label: prefer WS if open, else Polling; append staleness if any
-                val label = findViewById<TextView>(R.id.statusLabel)
+                updateStatusChip(if (isWsOpen) getString(R.string.ws_label) else getString(R.string.polling_label), true)
+                lastApiOkAt = System.currentTimeMillis()
+                // Status chip: prefer WS if open, else Polling; append staleness if any
+                val chip = findViewById<Chip>(R.id.chipStatus)
                 val base = if (isWsOpen) getString(R.string.ws_label) else getString(R.string.polling_label)
                 val updated = home.price?.updatedAt ?: 0L
                 val staleMin = if (updated > 0) (((System.currentTimeMillis()) - updated) / 60000).toInt() else 0
-                label?.text = if (staleMin >= 2) "$base • Stale ${staleMin}m" else base
+                chip?.text = if (staleMin >= 2) "$base • Stale ${staleMin}m" else base
 
                 // Metrics chips
                 home.metrics?.let { m ->
@@ -764,16 +799,121 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Alerts
-                home.alerts?.let { list -> alertsAdapter.submitList(list.take(3)) }
+                // Alerts - filter through gate evaluator
+                home.alerts?.let { list ->
+                    currentHomeLevels = home.levels // Cache for click handler
+                    val gates = home.gates
+                    
+                    val filtered = mutableListOf<com.example.sniperflow.network.AlertItem>()
+                    val receiptsMap = mutableMapOf<String, String>()
+                    
+                    list.forEach { alert ->
+                        val inputs = com.example.sniperflow.domain.gates.GateEvaluator.GateInputs(
+                            newsLockActive = gates?.newsLock == true,
+                            newsLockReason = home.calendar?.nextRed?.title,
+                            dailyLossR = journalStats.dailyLossR,
+                            maxDailyLossR = profile.maxDailyLossR,
+                            tradesToday = journalStats.tradesThisSession,
+                            maxTradesPerSession = profile.maxTradesPerSession,
+                            currentSession = currentSessionKey,
+                            latencyMs = home.quality?.latencyMs ?: 0L,
+                            maxLatencyMs = 500L,
+                            spreadPts = home.quality?.spreadPts ?: 0,
+                            maxSpreadPts = 30,
+                            quality = home.quality?.let { 
+                                com.example.sniperflow.domain.model.QualityState(
+                                    spreadPts = it.spreadPts ?: 0,
+                                    latencyMs = it.latencyMs ?: 0L,
+                                    state = it.state ?: "OK"
+                                )
+                            }
+                        )
+                        val result = com.example.sniperflow.domain.gates.GateEvaluator.evaluate(inputs)
+                        if (result.actionable) {
+                            filtered.add(alert)
+                            // Store gate receipts as JSON for this alert
+                            alert.id?.let { id ->
+                                val receiptsJson = org.json.JSONArray().apply {
+                                    result.receipts.forEach { receipt ->
+                                        put(org.json.JSONObject().apply {
+                                            put("name", receipt.name)
+                                            put("passed", receipt.passed)
+                                            receipt.reason?.let { put("reason", it) }
+                                            receipt.threshold?.let { put("threshold", it) }
+                                            receipt.current?.let { put("current", it) }
+                                        })
+                                    }
+                                }.toString()
+                                receiptsMap[id] = receiptsJson
+                            }
+                        }
+                    }
+                    
+                    gateReceiptsMap.clear()
+                    gateReceiptsMap.putAll(receiptsMap)
+                    alertsAdapter.submitList(filtered.take(3))
+                }
 
-                // Plan-Lock banner
-                home.gates?.let { gates ->
-                    val locked = gates.planLock == true
+                // Fetch and display market regime
+                lifecycleScope.launch {
+                    runCatching {
+                        val regime = api.regimeCurrent("XAUUSD")
+                        val regimeText = findViewById<TextView>(R.id.regimeText)
+                        val regimeStrategy = findViewById<TextView>(R.id.regimeStrategy)
+                        val regimeConfidence = findViewById<TextView>(R.id.regimeConfidence)
+                        
+                        if (regimeText != null) {
+                            val regimeLabel = when (regime.regime.uppercase()) {
+                                "RANGE_BOUND" -> getString(R.string.regime_range_bound)
+                                "TRENDING" -> getString(R.string.regime_trending)
+                                "VOLATILE" -> getString(R.string.regime_volatile)
+                                "NEUTRAL" -> getString(R.string.regime_neutral)
+                                else -> getString(R.string.regime_unknown)
+                            }
+                            regimeText.text = regimeLabel
+                            
+                            // Set color based on regime
+                            val regimeColor = when (regime.regime.uppercase()) {
+                                "RANGE_BOUND" -> ContextCompat.getColor(this@MainActivity, R.color.colorPrimary)
+                                "TRENDING" -> ContextCompat.getColor(this@MainActivity, R.color.colorPositive)
+                                "VOLATILE" -> ContextCompat.getColor(this@MainActivity, R.color.colorNegative)
+                                else -> ContextCompat.getColor(this@MainActivity, R.color.colorOnSurface)
+                            }
+                            regimeText.setTextColor(regimeColor)
+                        }
+                        
+                        if (regimeStrategy != null && regime.recommendedStrategy != null) {
+                            regimeStrategy.text = regime.recommendedStrategy
+                        }
+                        
+                        if (regimeConfidence != null) {
+                            val confidencePercent = (regime.confidence * 100).toInt()
+                            regimeConfidence.text = getString(R.string.regime_confidence_fmt, confidencePercent.toFloat())
+                        }
+                    }.onFailure { e ->
+                        Timber.w(e, "Failed to fetch regime")
+                        findViewById<TextView>(R.id.regimeText)?.text = getString(R.string.regime_unknown)
+                    }
+                }
+
+                // Plan-Lock banner - check with manager
+                lifecycleScope.launch {
+                    val profileRepo = com.example.sniperflow.data.user.UserProfileRepository.create(this@MainActivity)
+                    val planLockMgr = com.example.sniperflow.domain.planlock.PlanLockManager(profileRepo)
+                    val locked = planLockMgr.checkAndUpdateLock(
+                        dailyLossR = journalStats.dailyLossR,
+                        tradesToday = journalStats.tradesThisSession,
+                        currentSession = currentSessionKey
+                    )
+                    
                     findViewById<View>(R.id.bannerPlanLock)?.visibility = if (locked) View.VISIBLE else View.GONE
-                    if (locked) findViewById<TextView>(R.id.tvBannerText)?.text = gates.reason ?: "Your plan is protecting you. New entries locked."
-                } ?: run {
-                    findViewById<View>(R.id.bannerPlanLock)?.visibility = View.GONE
+                    if (locked) {
+                        findViewById<TextView>(R.id.tvBannerText)?.text = planLockMgr.getLockReason() ?: "Plan locked"
+                        // Disable trading actions
+                        findViewById<View>(R.id.fabAdd)?.isEnabled = false
+                    } else {
+                        findViewById<View>(R.id.fabAdd)?.isEnabled = true
+                    }
                 }
 
                 // Save lightweight cache for fast first paint next launch
@@ -844,12 +984,9 @@ class MainActivity : AppCompatActivity() {
                 val cached = loadHomeCache()
                 if (cached != null) {
                     showFromCache(cached)
-                    setConnStatusAmber()
-                    // If WS is open but API failed, show WS
-                    val label = findViewById<TextView>(R.id.statusLabel)
-                    label?.text = if (isWsOpen) getString(R.string.ws_label) else getString(R.string.polling_label)
+                    updateStatusChip(if (isWsOpen) getString(R.string.ws_label) else getString(R.string.polling_label), false)
                 } else {
-                    setConnStatusRed()
+                    updateStatusChip(getString(R.string.offline_label), false)
                 }
                 // Banner to indicate degraded state
                 findViewById<View>(R.id.bannerFeed)?.visibility = View.VISIBLE
@@ -900,16 +1037,52 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.low24Text)?.text = c.low24h?.let { getString(R.string.l24_fmt, it) } ?: getString(R.string.l24_fmt, Double.NaN).replace("NaN", "—")
     }
 
-    private fun setConnStatus(colorHex: String) {
-        val dot = findViewById<View>(R.id.viewConnStatus) ?: return
-        val bg = GradientDrawable()
-        bg.shape = GradientDrawable.OVAL
-        bg.setColor(colorHex.toColorInt())
-        dot.background = bg
+    private fun updateStatusChip(text: String, isConnected: Boolean) {
+        val chip = findViewById<Chip>(R.id.chipStatus) ?: return
+        chip.text = text
+        chip.setChipBackgroundColorResource(if (isConnected) android.R.color.transparent else android.R.color.transparent)
+        chip.chipStrokeColor = ContextCompat.getColorStateList(this, if (isConnected) R.color.colorPrimary else R.color.colorError)
     }
-    private fun setConnStatusGreen() = setConnStatus("#16A34A")
-    private fun setConnStatusAmber() = setConnStatus("#F59E0B")
-    private fun setConnStatusRed() = setConnStatus("#DC2626")
+    private suspend fun calculateJournalStats(
+        dao: JournalDao,
+        sessionKey: String?
+    ): JournalStats {
+        val tz = UserTimezone.timeZone()
+        val calendar = Calendar.getInstance(tz).apply {
+            timeInMillis = System.currentTimeMillis()
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val dayStart = calendar.timeInMillis
+        val dayEnd = dayStart + TimeUnit.DAYS.toMillis(1) - 1
+        val lossR = dao.sumLossRBetween(dayStart, dayEnd) ?: 0.0
+        val sessionLabel = normalizeSessionKey(sessionKey)
+        val trades = if (!sessionLabel.isNullOrBlank()) {
+            dao.countTradesForSession(sessionLabel, dayStart, dayEnd)
+        } else {
+            dao.countTradesBetween(dayStart, dayEnd)
+        }
+        return JournalStats(
+            dailyLossR = lossR,
+            tradesThisSession = trades
+        )
+    }
+
+    private fun normalizeSessionKey(sessionKey: String?): String? {
+        return when (sessionKey?.lowercase(Locale.US)) {
+            "london" -> "London"
+            "newyork", "new_york", "ny" -> "New York"
+            "asia" -> "Asia"
+            else -> sessionKey
+        }
+    }
+
+    private data class JournalStats(
+        val dailyLossR: Double,
+        val tradesThisSession: Int
+    )
 
     private fun vibrateOnce(durationMs: Long = 30L, amplitude: Int = 60) {
         try {

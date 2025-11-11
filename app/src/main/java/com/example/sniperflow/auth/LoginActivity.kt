@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.sniperflow.R
 import com.example.sniperflow.MainActivity
@@ -13,8 +12,9 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.example.sniperflow.util.LocaleAwareActivity
 
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : LocaleAwareActivity() {
     private lateinit var repo: AuthRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -1,217 +1,572 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:fillViewport="true"
     android:scrollbars="vertical"
     android:fadeScrollbars="false"
     android:scrollbarStyle="outsideInset"
-    android:overScrollMode="always">
+    android:overScrollMode="always"
+    android:background="@color/colorBackground">
 
     <LinearLayout
-        android:orientation="vertical" android:padding="16dp"
-        android:layout_width="match_parent" android:layout_height="wrap_content">
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
 
-    <TextView
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="New Journal" android:textSize="18sp" android:textStyle="bold"
-        android:layout_marginBottom="8dp"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/journal_sheet_title"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorOnSurface"
+            android:layout_marginBottom="20dp" />
 
-    <LinearLayout android:orientation="horizontal"
-        android:layout_width="match_parent" android:layout_height="wrap_content">
-        <ToggleButton android:id="@+id/chipBull" android:textOn="Bull" android:textOff="Bull"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        <ToggleButton android:id="@+id/chipBear" android:textOn="Bear" android:textOff="Bear"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"/>
-        <ToggleButton android:id="@+id/chipLondon" android:textOn="London" android:textOff="London"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"/>
-        <ToggleButton android:id="@+id/chipNY" android:textOn="New York" android:textOff="New York"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"/>
-    </LinearLayout>
+        <!-- Direction & Session Selection -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/journal_sheet_direction_session"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginBottom="12dp" />
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/toggleDirection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    app:singleSelection="true"
+                    app:selectionRequired="true">
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnLong"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/journal_sheet_direction_long"
+                        android:textSize="14sp"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        app:cornerRadius="12dp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnShort"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/journal_sheet_direction_short"
+                        android:textSize="14sp"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        app:cornerRadius="12dp" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+                <com.google.android.material.chip.ChipGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:singleSelection="false"
+                    app:chipSpacing="8dp">
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBull"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/journal_sheet_bias_bull"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBear"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/journal_sheet_bias_bear"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipLondon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/journal_sheet_session_london"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipNY"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/journal_sheet_session_newyork"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                </com.google.android.material.chip.ChipGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Prices" android:textStyle="bold" android:layout_marginTop="8dp"/>
+        <!-- Prices Section -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/journal_sheet_prices"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginBottom="12dp" />
+                <LinearLayout
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:baselineAligned="false">
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/ctxDo"
+                            android:hint="DO"
+                            android:inputType="numberDecimal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/ctxPdh"
+                            android:hint="PDH"
+                            android:inputType="numberDecimal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/ctxPdl"
+                            android:hint="PDL"
+                            android:inputType="numberDecimal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <LinearLayout android:orientation="horizontal" android:layout_marginTop="12dp"
-        android:layout_width="match_parent" android:layout_height="wrap_content">
-        <EditText android:id="@+id/ctxDo"  android:hint="DO"  android:inputType="numberDecimal"
-            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"/>
-        <EditText android:id="@+id/ctxPdh" android:hint="PDH" android:inputType="numberDecimal"
-            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"/>
-        <EditText android:id="@+id/ctxPdl" android:hint="PDL" android:inputType="numberDecimal"
-            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"/>
-    </LinearLayout>
+        <!-- Entry, SL, TP Section -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/journal_sheet_levels"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginBottom="12dp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false">
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inEntry"
+                            android:hint="Entry"
+                            android:inputType="numberDecimal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <LinearLayout
+                        android:orientation="horizontal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:baselineAligned="false">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnEntryMinus"
+                            android:text="−"
+                            android:textSize="20sp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="12dp" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnEntryPlus"
+                            android:text="+"
+                            android:textSize="20sp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_marginStart="6dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false">
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inSl"
+                            android:hint="Stop Loss (SL)"
+                            android:inputType="numberDecimal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <LinearLayout
+                        android:orientation="horizontal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:baselineAligned="false">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSlMinus"
+                            android:text="−"
+                            android:textSize="20sp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="12dp" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSlPlus"
+                            android:text="+"
+                            android:textSize="20sp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_marginStart="6dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false">
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inTp"
+                            android:hint="Take Profit (TP)"
+                            android:inputType="numberDecimal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <LinearLayout
+                        android:orientation="horizontal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:baselineAligned="false">
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTpMinus"
+                            android:text="−"
+                            android:textSize="20sp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="12dp" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTpPlus"
+                            android:text="+"
+                            android:textSize="20sp"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_marginStart="6dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </LinearLayout>
+                <com.google.android.material.chip.ChipGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:chipSpacing="8dp">
+                    <com.google.android.material.chip.Chip
+                        android:text="@string/journal_sheet_rr_half"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:chipMinHeight="36dp" />
+                    <com.google.android.material.chip.Chip
+                        android:text="@string/journal_sheet_rr_one"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:chipMinHeight="36dp" />
+                    <com.google.android.material.chip.Chip
+                        android:text="@string/journal_sheet_rr_two"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:chipMinHeight="36dp" />
+                </com.google.android.material.chip.ChipGroup>
+                <LinearLayout
+                    android:orientation="horizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:baselineAligned="false">
+                    <com.google.android.material.chip.Chip
+                        android:text="@string/journal_sheet_rr_hint"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        app:chipMinHeight="40dp"
+                        app:chipBackgroundColor="?attr/colorSurfaceVariant" />
+                    <com.google.android.material.chip.Chip
+                        android:text="@string/journal_sheet_tp_hint"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        app:chipMinHeight="40dp"
+                        app:chipBackgroundColor="?attr/colorSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <LinearLayout
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp" android:orientation="horizontal">
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/inEntry" android:hint="Entry" android:inputType="numberDecimal"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
-        </com.google.android.material.textfield.TextInputLayout>
-        <LinearLayout android:orientation="horizontal"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp">
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnEntryMinus" android:text="-"
-                android:layout_width="40dp" android:layout_height="40dp" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnEntryPlus" android:text="+"
-                android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="6dp" />
-        </LinearLayout>
-    </LinearLayout>
-    <LinearLayout
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="6dp" android:orientation="horizontal">
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/inSl" android:hint="Stop Loss (SL)" android:inputType="numberDecimal"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
-        </com.google.android.material.textfield.TextInputLayout>
-        <LinearLayout android:orientation="horizontal"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp">
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSlMinus" android:text="-"
-                android:layout_width="40dp" android:layout_height="40dp" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSlPlus" android:text="+"
-                android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="6dp" />
-        </LinearLayout>
-    </LinearLayout>
-    <LinearLayout
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="6dp" android:orientation="horizontal">
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/inTp" android:hint="Take Profit (TP)" android:inputType="numberDecimal"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
-        </com.google.android.material.textfield.TextInputLayout>
-        <LinearLayout android:orientation="horizontal"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp">
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnTpMinus" android:text="-"
-                android:layout_width="40dp" android:layout_height="40dp" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnTpPlus" android:text="+"
-                android:layout_width="40dp" android:layout_height="40dp" android:layout_marginStart="6dp" />
-        </LinearLayout>
-    </LinearLayout>
+        <!-- Setup Section -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/journal_sheet_setup"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginBottom="12dp" />
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <AutoCompleteTextView
+                        android:id="@+id/inTimeframe"
+                        android:hint="Timeframe"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        android:focusable="false" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/inTime"
+                        android:hint="Time (tap to pick)"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:focusable="true"
+                        android:focusableInTouchMode="true"
+                        android:inputType="none"
+                        android:clickable="true" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/tagsRow"
+                    android:orientation="horizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:chipSpacing="8dp"
+                    app:singleSelection="false">
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/tagMss"
+                        android:text="@string/journal_sheet_tag_mss"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/tagFvg"
+                        android:text="@string/journal_sheet_tag_fvg"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/tagNews"
+                        android:text="@string/journal_sheet_tag_news"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/tagOverride"
+                        android:text="@string/journal_sheet_tag_override"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/tagTp"
+                        android:text="@string/journal_sheet_tag_tp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checkable="true"
+                        app:chipMinHeight="40dp" />
+                </com.google.android.material.chip.ChipGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <LinearLayout android:orientation="horizontal"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
-        <TextView android:text="0.5R" android:padding="6dp"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:background="@drawable/bg_chip"/>
-        <TextView android:text="1R" android:padding="6dp"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp" android:background="@drawable/bg_chip"/>
-        <TextView android:text="2R" android:padding="6dp"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp" android:background="@drawable/bg_chip"/>
-    </LinearLayout>
+        <!-- Screenshots Section -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+                <TextView
+                    android:text="@string/journal_sheet_screenshots"
+                    android:layout_marginBottom="12dp"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvShots"
+                    android:layout_width="match_parent"
+                    android:layout_height="84dp"
+                    android:clipToPadding="false" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddShots"
+                    android:text="@string/journal_sheet_add_screenshots"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    app:cornerRadius="12dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <LinearLayout android:orientation="horizontal"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
-        <TextView android:text="Risk (R) = |Entry − SL|" android:padding="8dp"
-            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-            android:background="@drawable/bg_chip"/>
-        <TextView android:text="TP-distance = |TP − Entry|" android:padding="8dp"
-            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-            android:layout_marginStart="8dp" android:background="@drawable/bg_chip"/>
-    </LinearLayout>
+        <!-- Notes Section -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/journal_sheet_notes"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginBottom="12dp" />
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/inNotes"
+                        android:hint="@string/journal_sheet_notes"
+                        android:minLines="3"
+                        android:gravity="top"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Setup" android:textStyle="bold" android:layout_marginTop="12dp"/>
-
-    <com.google.android.material.button.MaterialButtonToggleGroup
-        android:id="@+id/toggleDirection"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
+        <!-- Save Button -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnLong" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:text="Long" android:checkable="true"/>
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnShort" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:text="Short" android:checkable="true"/>
-    </com.google.android.material.button.MaterialButtonToggleGroup>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
-        <AutoCompleteTextView
-            android:id="@+id/inTimeframe" android:hint="Timeframe"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:inputType="none" android:focusable="false"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="6dp">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/inTime" android:hint="Time (tap to pick)"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:focusable="false" android:clickable="true"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <LinearLayout android:id="@+id/tagsRow" android:orientation="horizontal"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp">
-        <CheckBox android:id="@+id/tagMss" android:text="mss"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        <CheckBox android:id="@+id/tagFvg" android:text="fvg"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        <CheckBox android:id="@+id/tagNews" android:text="news"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        <CheckBox android:id="@+id/tagOverride" android:text="override"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-        <CheckBox android:id="@+id/tagTp" android:text="TP"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-    </LinearLayout>
-
-    <TextView android:text="Screenshots" android:layout_marginTop="10dp"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"/>
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvShots" android:layout_width="match_parent"
-        android:layout_height="84dp" android:clipToPadding="false"/>
-    <com.google.android.material.button.MaterialButton android:id="@+id/btnAddShots" android:text="Add screenshots"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"/>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/inNotes" android:hint="Notes" android:minLines="3"
-            android:gravity="top" android:layout_width="match_parent" android:layout_height="wrap_content"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.button.MaterialButton android:id="@+id/btnSave" android:text="Save"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:backgroundTint="@color/colorPrimary"
-        android:textColor="@color/colorOnPrimary"/>
+            android:id="@+id/btnSave"
+            android:text="@string/journal_sheet_save"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="8dp"
+            android:textSize="16sp"
+            android:textColor="?attr/colorOnPrimary"
+            app:cornerRadius="16dp"
+            app:backgroundTint="?attr/colorPrimary" />
     </LinearLayout>
 
 </androidx.core.widget.NestedScrollView>
-
-
-
-
-
-
-
-
-
-

@@ -2,9 +2,9 @@ package com.example.sniperflow.notifications
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
 import com.example.sniperflow.R
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.appbar.MaterialToolbar
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.example.sniperflow.network.RetrofitModule
@@ -19,14 +19,15 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.DiffUtil
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import com.example.sniperflow.util.LocaleAwareActivity
 import java.util.Locale
 import com.example.sniperflow.network.SignalDto
 
-class NotificationsActivity : AppCompatActivity() {
+class NotificationsActivity : LocaleAwareActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_notifications)
-        findViewById<androidx.appcompat.widget.Toolbar?>(R.id.toolbar)?.setNavigationOnClickListener { finish() }
+        findViewById<MaterialToolbar?>(R.id.toolbar)?.setNavigationOnClickListener { finish() }
 
         // Bottom navigation wiring
         findViewById<BottomNavigationView>(R.id.bottomNav)?.apply {

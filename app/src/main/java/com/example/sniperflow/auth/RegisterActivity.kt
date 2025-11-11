@@ -5,16 +5,16 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.example.sniperflow.R
 import com.example.sniperflow.MainActivity
+import com.example.sniperflow.R
+import com.example.sniperflow.util.LocaleAwareActivity
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputLayout
-  import kotlinx.coroutines.launch
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
-class RegisterActivity : AppCompatActivity() {
+class RegisterActivity : LocaleAwareActivity() {
     private lateinit var repo: AuthRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,15 +34,16 @@ class RegisterActivity : AppCompatActivity() {
         val tabs = findViewById<TabLayout>(R.id.tabLayout)
         tabs.getTabAt(1)?.select()
         tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-                override fun onTabSelected(tab: com.google.android.material.tabs.TabLayout.Tab) {
-                    if (tab.position == 0) {
-                        startActivity(Intent(this@RegisterActivity, LoginActivity::class.java))
-                        finish()
-                    }
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                if (tab.position == 0) {
+                    startActivity(Intent(this@RegisterActivity, LoginActivity::class.java))
+                    finish()
                 }
-                override fun onTabUnselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
-                override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
-            })
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
 
         register.setOnClickListener {
             val e = email.text.toString().trim()

@@ -8,11 +8,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.ToggleButton
 import android.widget.Toast
 import android.widget.AutoCompleteTextView
+import com.google.android.material.chip.Chip
 import android.app.TimePickerDialog
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -114,13 +113,15 @@ class NewJournalSheet : DialogFragment() {
         // Material toggle group for direction: mirror to existing chips
         val btnLong = v.findViewById<View>(R.id.btnLong)
         val btnShort = v.findViewById<View>(R.id.btnShort)
+        val chipBull = v.findViewById<Chip>(R.id.chipBull)
+        val chipBear = v.findViewById<Chip>(R.id.chipBear)
         btnLong?.setOnClickListener {
-            v.findViewById<ToggleButton>(R.id.chipBull).isChecked = true
-            v.findViewById<ToggleButton>(R.id.chipBear).isChecked = false
+            chipBull?.isChecked = true
+            chipBear?.isChecked = false
         }
         btnShort?.setOnClickListener {
-            v.findViewById<ToggleButton>(R.id.chipBull).isChecked = false
-            v.findViewById<ToggleButton>(R.id.chipBear).isChecked = true
+            chipBull?.isChecked = false
+            chipBear?.isChecked = true
         }
 
         // Timeframe dropdown
@@ -148,10 +149,10 @@ class NewJournalSheet : DialogFragment() {
     }
 
     private fun prefillFromEntity(v: View, e: JournalEntity) {
-        v.findViewById<ToggleButton>(R.id.chipBull).isChecked = e.bias.equals("Bull", true)
-        v.findViewById<ToggleButton>(R.id.chipBear).isChecked = e.bias.equals("Bear", true)
-        v.findViewById<ToggleButton>(R.id.chipLondon).isChecked = e.session.equals("London", true)
-        v.findViewById<ToggleButton>(R.id.chipNY).isChecked = e.session.equals("New York", true)
+        v.findViewById<Chip>(R.id.chipBull)?.isChecked = e.bias.equals("Bull", true)
+        v.findViewById<Chip>(R.id.chipBear)?.isChecked = e.bias.equals("Bear", true)
+        v.findViewById<Chip>(R.id.chipLondon)?.isChecked = e.session.equals("London", true)
+        v.findViewById<Chip>(R.id.chipNY)?.isChecked = e.session.equals("New York", true)
         v.findViewById<EditText>(R.id.inEntry).setText(e.entry?.toString() ?: "")
         v.findViewById<EditText>(R.id.inSl).setText(e.sl?.toString() ?: "")
         v.findViewById<EditText>(R.id.inTp).setText(e.tp?.toString() ?: "")
@@ -161,11 +162,11 @@ class NewJournalSheet : DialogFragment() {
         v.findViewById<EditText>(R.id.inNotes).setText(e.notes)
         v.findViewById<AutoCompleteTextView?>(R.id.inTimeframe)?.setText(e.timeframe, false)
         // Tags
-        v.findViewById<CheckBox>(R.id.tagMss).isChecked = e.tagsCsv.contains("mss")
-        v.findViewById<CheckBox>(R.id.tagFvg).isChecked = e.tagsCsv.contains("fvg")
-        v.findViewById<CheckBox>(R.id.tagNews).isChecked = e.tagsCsv.contains("news")
-        v.findViewById<CheckBox>(R.id.tagOverride).isChecked = e.tagsCsv.contains("override")
-        v.findViewById<CheckBox>(R.id.tagTp).isChecked = e.tagsCsv.contains("TP")
+        v.findViewById<Chip>(R.id.tagMss)?.isChecked = e.tagsCsv.contains("mss")
+        v.findViewById<Chip>(R.id.tagFvg)?.isChecked = e.tagsCsv.contains("fvg")
+        v.findViewById<Chip>(R.id.tagNews)?.isChecked = e.tagsCsv.contains("news")
+        v.findViewById<Chip>(R.id.tagOverride)?.isChecked = e.tagsCsv.contains("override")
+        v.findViewById<Chip>(R.id.tagTp)?.isChecked = e.tagsCsv.contains("TP")
         // Shots
         val uris = e.shotUrisCsv.split(",").filter { it.isNotBlank() }.map(Uri::parse)
         picked.setAll(uris)
@@ -182,7 +183,7 @@ class NewJournalSheet : DialogFragment() {
         val notesStr = v.findViewById<EditText>(R.id.inNotes).text?.toString() ?: ""
         val hasTags = listOf(
             R.id.tagMss, R.id.tagFvg, R.id.tagNews, R.id.tagOverride, R.id.tagTp
-        ).any { id -> v.findViewById<CheckBox>(id).isChecked }
+        ).any { id -> v.findViewById<Chip>(id)?.isChecked == true }
         val hasAny = listOf(entryStr, slStr, tpStr, doStr, pdhStr, pdlStr).any { it.isNotBlank() } ||
                 notesStr.isNotBlank() || picked.isNotEmpty() || hasTags
         if (!hasAny) return null
@@ -192,12 +193,14 @@ class NewJournalSheet : DialogFragment() {
         val tp = tpStr.toDoubleOrNull()
         val timeframeSel = v.findViewById<AutoCompleteTextView?>(R.id.inTimeframe)?.text?.toString()?.ifBlank { null }
         val timeframe = timeframeSel ?: "M5"
+        val chipBear = v.findViewById<Chip>(R.id.chipBear)
+        val chipLondon = v.findViewById<Chip>(R.id.chipLondon)
         return JournalEntity(
             userId = "anon",
             timeframe = timeframe,
-            direction = if (v.findViewById<ToggleButton>(R.id.chipBear).isChecked) "Short" else "Long",
-            session = if (v.findViewById<ToggleButton>(R.id.chipLondon).isChecked) "London" else "New York",
-            bias = if (v.findViewById<ToggleButton>(R.id.chipBear).isChecked) "Bear" else "Bull",
+            direction = if (chipBear?.isChecked == true) "Short" else "Long",
+            session = if (chipLondon?.isChecked == true) "London" else "New York",
+            bias = if (chipBear?.isChecked == true) "Bear" else "Bull",
             entry = entry,
             sl = sl,
             tp = tp,
@@ -207,11 +210,11 @@ class NewJournalSheet : DialogFragment() {
             pdl = pdlStr.toDoubleOrNull(),
             notes = notesStr,
             tagsCsv = buildList {
-                if (v.findViewById<CheckBox>(R.id.tagMss).isChecked) add("mss")
-                if (v.findViewById<CheckBox>(R.id.tagFvg).isChecked) add("fvg")
-                if (v.findViewById<CheckBox>(R.id.tagNews).isChecked) add("news")
-                if (v.findViewById<CheckBox>(R.id.tagOverride).isChecked) add("override")
-                if (v.findViewById<CheckBox>(R.id.tagTp).isChecked) add("TP")
+                if (v.findViewById<Chip>(R.id.tagMss)?.isChecked == true) add("mss")
+                if (v.findViewById<Chip>(R.id.tagFvg)?.isChecked == true) add("fvg")
+                if (v.findViewById<Chip>(R.id.tagNews)?.isChecked == true) add("news")
+                if (v.findViewById<Chip>(R.id.tagOverride)?.isChecked == true) add("override")
+                if (v.findViewById<Chip>(R.id.tagTp)?.isChecked == true) add("TP")
             }.joinToString(","),
             shotUrisCsv = picked.joinToString(",") { it.toString() },
             synced = false

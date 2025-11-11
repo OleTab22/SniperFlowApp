@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">SniperFlow</string>
-    <string name="base_url">https://sniperflow-api.onrender.com/</string>
+    <string name="base_url" translatable="false">https://sniperflow-api.onrender.com/</string>
     <string name="updated_fmt">Updated %1$s</string>
     <string name="h24_fmt">H24 %1$.2f</string>
     <string name="l24_fmt">L24 %1$.2f</string>
@@ -72,4 +72,219 @@
     <string name="add_details_before_saving">Please add details before saving</string>
     <string name="journal_saved">Journal saved</string>
     <string name="journal_updated">Journal updated</string>
+    <string name="alert_receipt_chip_fmt">%1$s: %2$s</string>
+    <string name="alert_receipt_passed">✓</string>
+    <string name="alert_receipt_failed">✗</string>
+    <string name="alert_receipts_all_passed">All Gates Passed ✓</string>
+    <string name="alert_receipts_blocked">Gates Blocked ✗</string>
+    <string name="alert_driver_weight_fmt">%1$s: %2$d%%</string>
+    <!-- Gate receipts -->
+    <string name="gate_news_lock">News Lock</string>
+    <string name="gate_daily_loss">Daily Loss</string>
+    <string name="gate_max_trades">Max Trades</string>
+    <string name="gate_latency">Latency</string>
+    <string name="gate_spread">Spread</string>
+    <string name="gate_quality">Quality</string>
+    <string name="gate_passed">Passed</string>
+    <string name="gate_failed">Failed</string>
+    <string name="plan_lock_active">Plan Lock Active</string>
+    <string name="plan_lock_reason_fmt">Reason: %1$s</string>
+    <!-- Onboarding -->
+    <string name="onboarding_title">Welcome to SniperFlow</string>
+    <string name="onboarding_subtitle">Set up your trading plan</string>
+    <!-- Privacy -->
+    <string name="privacy_export">Export Data</string>
+    <string name="privacy_delete">Delete All Data</string>
+    <string name="privacy_export_success">Data exported successfully</string>
+    <string name="privacy_delete_confirm">Are you sure you want to delete all data? This cannot be undone.</string>
+    <!-- Notifications -->
+    <string name="notify_plan_ready">Plan Ready</string>
+    <string name="notify_gate_pass">Gate Passed</string>
+    <string name="notify_gate_blocked">Gate Blocked</string>
+    <string name="notify_econ">Economic Events</string>
+    <string name="notify_news">News Updates</string>
+    <string name="quiet_hours">Quiet Hours</string>
+    <string name="quiet_hours_enabled">Enable Quiet Hours</string>
+    <!-- FSCA Disclaimer -->
+    <string name="fsca_disclaimer">This app is for educational purposes only. Not financial advice. Trading involves risk.</string>
+    <!-- Language names -->
+    <string name="language_english">English</string>
+    <string name="language_zulu">isiZulu</string>
+    <string name="language_afrikaans">Afrikaans</string>
+    <!-- Global UI -->
+    <string name="next">Next</string>
+    <string name="placeholder_dash">—</string>
+    <!-- Chart -->
+    <string name="chart_title">Chart</string>
+    <string name="timeframe_15m">15m</string>
+    <string name="timeframe_1h">1h</string>
+    <string name="timeframe_4h">4h</string>
+    <string name="timeframe_1d">1D</string>
+    <!-- Notifications -->
+    <string name="notifications_title">Notifications</string>
+    <string name="news_section_title">News</string>
+    <string name="fundamentals_section_title">Fundamentals</string>
+    <string name="signals_section_title">Signals</string>
+    <!-- Settings -->
+    <string name="settings_section_risk_limits">Risk Limits</string>
+    <string name="settings_section_data_polling">Data &amp; Polling</string>
+    <string name="settings_section_news_lock">News Lock Presets</string>
+    <string name="settings_newslock_cpi">CPI</string>
+    <string name="settings_newslock_nfp">NFP</string>
+    <string name="settings_newslock_fomc">FOMC</string>
+    <string name="newslock_cpi_description">Consumer Price Index</string>
+    <string name="newslock_nfp_description">Non-Farm Payrolls</string>
+    <string name="newslock_fomc_description">Federal Reserve Meetings</string>
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_section_language">Language</string>
+    <string name="settings_section_privacy">Privacy</string>
+    <string name="settings_save_all">Save All Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="max_daily_loss_hint">Max Daily Loss (R)</string>
+    <string name="max_trades_per_session_hint">Max Trades per Session</string>
+    <string name="epsilon_hint">Smoothing (ɛ)</string>
+    <string name="refresh_cooldown_hint">Refresh Cooldown (ms)</string>
+    <string name="timezone_hint">Timezone</string>
+    <string name="start_hour_hint">Start Hour</string>
+    <string name="end_hour_hint">End Hour</string>
+    <string name="language_select_hint">Select Language</string>
+    <!-- Onboarding -->
+    <string name="onboarding_sessions_title">Trading Sessions</string>
+    <string name="onboarding_sessions_subtitle">Select which trading sessions you want to trade. SAST timezone defaults.</string>
+    <string name="onboarding_sessions_asia">Asia Session</string>
+    <string name="onboarding_sessions_asia_time">01:00–09:00 SAST</string>
+    <string name="onboarding_sessions_london">London Session</string>
+    <string name="onboarding_sessions_london_time">09:00–13:00 SAST</string>
+    <string name="onboarding_sessions_newyork">New York Session</string>
+    <string name="onboarding_sessions_newyork_time">14:30–18:00 SAST</string>
+    <string name="onboarding_risk_title">Risk Limits</string>
+    <string name="onboarding_risk_subtitle">Set your risk management limits. Plan-Lock will activate when limits are reached.</string>
+    <string name="onboarding_news_title">News Lock Presets</string>
+    <string name="onboarding_news_subtitle">Select high-impact events that will lock trading during their release windows.</string>
+    <string name="onboarding_language_title">Language &amp; Notifications</string>
+    <string name="onboarding_language_language_label">Language</string>
+    <string name="onboarding_language_notifications_title">Notification Preferences</string>
+    <string name="onboarding_language_notify_plan">Plan Ready</string>
+    <string name="onboarding_language_notify_gate">Gate Pass/Blocked</string>
+    <string name="onboarding_language_notify_econ">Economic Events</string>
+    <string name="onboarding_language_notify_news">News Updates</string>
+    <!-- Alert detail -->
+    <string name="alert_gate_receipts_title">Gate Receipts</string>
+    <string name="alert_driver_weights_title">Driver Weights</string>
+    <string name="alert_view_on_chart">View on Chart</string>
+    <string name="alert_journal_now">Journal Now</string>
+    <string name="alert_details_title">Alert Details</string>
+    <!-- Journal -->
+    <string name="journal_risk_reward">Risk-Reward</string>
+    <string name="journal_edit">Edit</string>
+    <string name="journal_delete">Delete</string>
+    <string name="journal_new_entry">New Entry</string>
+    <!-- Driver dialog -->
+    <string name="driver_detail_title">Driver Detail</string>
+    <!-- Journal sheet -->
+    <string name="journal_sheet_title">New Journal</string>
+    <string name="journal_sheet_direction_session">Direction &amp; Session</string>
+    <string name="journal_sheet_direction_long">Long</string>
+    <string name="journal_sheet_direction_short">Short</string>
+    <string name="journal_sheet_bias_bull">Bull</string>
+    <string name="journal_sheet_bias_bear">Bear</string>
+    <string name="journal_sheet_session_london">London</string>
+    <string name="journal_sheet_session_newyork">New York</string>
+    <string name="journal_sheet_prices">Prices</string>
+    <string name="journal_sheet_levels">Trade Levels</string>
+    <string name="journal_sheet_setup">Setup</string>
+    <string name="journal_sheet_tag_mss">mss</string>
+    <string name="journal_sheet_tag_fvg">fvg</string>
+    <string name="journal_sheet_tag_news">news</string>
+    <string name="journal_sheet_tag_override">override</string>
+    <string name="journal_sheet_tag_tp">TP</string>
+    <string name="journal_sheet_screenshots">Screenshots</string>
+    <string name="journal_sheet_add_screenshots">Add screenshots</string>
+    <string name="journal_sheet_notes">Notes</string>
+    <string name="journal_sheet_save">Save</string>
+    <string name="journal_sheet_rr_hint">Risk (R) = |Entry − SL|</string>
+    <string name="journal_sheet_tp_hint">TP-distance = |TP − Entry|</string>
+    <string name="journal_sheet_rr_half">0.5R</string>
+    <string name="journal_sheet_rr_one">1R</string>
+    <string name="journal_sheet_rr_two">2R</string>
+    <!-- Buttons -->
+    <string name="action_view_chart">Open Chart</string>
+    <string name="action_journal_this">Journal this</string>
+    <string name="action_back">Back</string>
+    <string name="action_next">Next</string>
+    <string name="action_finish">Finish</string>
+    <!-- Login / Register -->
+    <string name="login_tab_title">Login</string>
+    <string name="register_tab_title">Register</string>
+    <string name="forgot_password">Forgot password?</string>
+    <string name="login_button">Login</string>
+    <string name="register_button">Register</string>
+    <string name="email_hint">Email address</string>
+    <string name="password_hint">Password</string>
+    <string name="confirm_password_hint">Confirm password</string>
+    <string name="privacy_delete_confirm_title">Delete Journal</string>
+    <string name="privacy_delete_confirm_body">Are you sure?</string>
+    <string name="privacy_delete_positive">Delete</string>
+    <string name="privacy_delete_negative">Cancel</string>
+    <string name="quiet_hours_banner">Quiet hours %1$s–%2$s</string>
+    <string name="plan_lock_banner">Your plan is protecting you. New entries locked.</string>
+    <string name="feed_banner_degraded">Degraded feed — using cached/low quality quotes.</string>
+    <string name="alerts_section_title">Alerts</string>
+    <string name="symbol_placeholder">XAU/USD</string>
+    <string name="updated_placeholder">Updated —:—:—</string>
+    <string name="last_updated_just_now">Just now</string>
+    <string name="gap_placeholder">Gap —</string>
+    <string name="range_placeholder">Range —</string>
+    <string name="volume_placeholder">Volume —</string>
+    <string name="activity_placeholder">Activity —</string>
+    <string name="nowcast_placeholder">Nowcast —</string>
+    <string name="confluence_placeholder">Confluence —</string>
+    <string name="high24_placeholder">H24 —</string>
+    <string name="low24_placeholder">L24 —</string>
+    <string name="market_drivers_title">Market Drivers</string>
+    <string name="bias_neutral_placeholder">Bias: Neutral</string>
+    <string name="conf_placeholder">Conf. 0%</string>
+    <string name="session_asia_label">Asia\n01:00–09:00</string>
+    <string name="session_london_label">London\n09:00–13:00</string>
+    <string name="session_newyork_label">New York\n14:30–18:00</string>
+    <string name="fix_times_hint">Fix times shown on chart.</string>
+    <string name="overlap_active_label">Overlap active</string>
+    <string name="do_label">DO</string>
+    <string name="pdh_label">PDH</string>
+    <string name="pdl_label">PDL</string>
+    <string name="session_mid_placeholder">Session 50% —</string>
+    <string name="quiet_hours_banner_default">Quiet hours 22:00–06:00</string>
+    <string name="latest_signal_title">Latest Signal</string>
+    <string name="sample_event_text">US CPI in 42m (High)</string>
+    <string name="change_placeholder">(+0.00%)</string>
+    <string name="journal_status_open">OPEN</string>
+    <string name="journal_status_win">WIN</string>
+    <string name="journal_status_loss">LOSS</string>
+    <string name="journal_status_synced">SYNCED</string>
+    <string name="journal_title_placeholder">XAUUSD · M5</string>
+    <string name="journal_title_format">%1$s · %2$s</string>
+    <string name="journal_rr_placeholder">R:R —</string>
+    <string name="journal_bias_placeholder">Bull</string>
+    <string name="journal_session_placeholder">London</string>
+    <string name="journal_queue_badge">Queued to sync</string>
+    <string name="journal_subtitle_placeholder">MSS sweep + DO @ 2 431.20</string>
+    <string name="journal_subtitle_with_entry">%1$s %2$s @ %3$s</string>
+    <string name="journal_subtitle_no_entry">%1$s %2$s</string>
+    <string name="journal_meta_placeholder">12 Aug 14:23</string>
+    <string name="journal_direction_unknown">—</string>
+    <string name="screenshot_content_description">Screenshot</string>
+    <string name="remove_button_label">×</string>
+    <string name="remove_button_description">Remove</string>
+    
+    <!-- Market Regime -->
+    <string name="regime_title">Market Regime</string>
+    <string name="regime_loading">Loading…</string>
+    <string name="regime_strategy_placeholder">Strategy recommendation will appear here</string>
+    <string name="regime_confidence_placeholder">Confidence: —</string>
+    <string name="regime_range_bound">Range-Bound</string>
+    <string name="regime_trending">Trending</string>
+    <string name="regime_volatile">Volatile</string>
+    <string name="regime_neutral">Neutral</string>
+    <string name="regime_unknown">Unknown</string>
+    <string name="regime_confidence_fmt">Confidence: %.0f%%</string>
 </resources>

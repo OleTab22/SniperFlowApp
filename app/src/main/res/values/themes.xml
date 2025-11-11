@@ -8,6 +8,8 @@
         <item name="colorOnPrimary">@color/colorOnPrimary</item>
         <item name="colorSurface">@color/colorSurface</item>
         <item name="colorOnSurface">@color/colorOnSurface</item>
+        <item name="colorSurfaceVariant">@color/colorSurfaceVariant</item>
+        <item name="colorError">@color/colorError</item>
         <item name="android:fontFamily">sans-serif</item>
         <item name="materialButtonStyle">@style/Widget.MaterialComponents.Button</item>
     </style>
