@@ -21,51 +21,74 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
         <!-- Top App Bar -->
-        <LinearLayout
-            android:id="@+id/topBar"
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingBottom="8dp">
-            <TextView
-                android:id="@+id/titleText"
-                android:layout_width="0dp"
+            android:layout_marginBottom="16dp"
+            app:cardElevation="1dp"
+            app:cardCornerRadius="16dp"
+            app:cardBackgroundColor="?attr/colorSurface">
+            <LinearLayout
+                android:id="@+id/topBar"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="SniperFlow"
-                android:textSize="18sp" />
-            <View
-                android:id="@+id/viewConnStatus"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:layout_marginEnd="12dp"
-                android:background="#16A34A"
-                android:contentDescription="Connection status" />
-            <TextView
-                android:id="@+id/statusLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="12dp"
-                android:text="WS"
-                android:textSize="12sp" />
-            <ImageView
-                android:id="@+id/btnNotifications"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_marginEnd="12dp"
-                android:contentDescription="Notifications"
-                android:src="@android:drawable/ic_dialog_info" />
-            <ImageView
-                android:id="@+id/btnSettings"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:contentDescription="Settings"
-                android:src="@android:drawable/ic_menu_preferences" />
-        </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="16dp">
+                <TextView
+                    android:id="@+id/titleText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/app_name"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface" />
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:text="@string/ws_label"
+                    android:textSize="11sp"
+                    app:chipBackgroundColor="@android:color/transparent"
+                    app:chipStrokeWidth="1dp"
+                    app:chipStrokeColor="?attr/colorPrimary"
+                    app:chipMinHeight="28dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnNotifications"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginEnd="4dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    app:icon="@android:drawable/ic_dialog_info"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="20dp"
+                    style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
+                    android:contentDescription="Notifications" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettings"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    app:icon="@android:drawable/ic_menu_preferences"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="20dp"
+                    style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
+                    android:contentDescription="Settings" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <include layout="@layout/view_state" />
 
@@ -74,70 +97,78 @@
             android:id="@+id/livePriceCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="12dp">
+            android:layout_marginBottom="16dp"
+            app:cardElevation="4dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
-                <TextView
-                    android:id="@+id/symbolText"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="XAU/USD"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <TextView
+                        android:id="@+id/symbolText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/symbol_placeholder"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorPrimary"
+                        android:letterSpacing="0.05" />
+                    <TextView
+                        android:id="@+id/updatedText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/updated_placeholder"
+                        android:textSize="11sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:alpha="0.6" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/priceText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="-"
-                    android:textSize="36sp"
+                    android:text="@string/placeholder_dash"
+                    android:textSize="42sp"
                     android:textStyle="bold"
-                    android:layout_marginTop="8dp" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginTop="4dp"
+                    android:letterSpacing="-0.02" />
 
                 <TextView
                     android:id="@+id/changeText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="(+0.00%)"
+                    android:text="@string/change_placeholder"
                     android:textSize="16sp"
-                    android:layout_marginTop="4dp" />
+                    android:textStyle="bold"
+                    android:layout_marginTop="2dp" />
 
                 <com.example.sniperflow.ui.SparklineView
                     android:id="@+id/miniChart"
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="8dp" />
-
-                <TextView
-                    android:id="@+id/updatedText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Updated --:--:--"
-                    android:textSize="12sp"
-                    android:layout_marginTop="6dp" />
+                    android:layout_height="56dp"
+                    android:layout_marginTop="16dp" />
 
                 <TextView
                     android:id="@+id/updatedAgoText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Just now"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/refreshBtn"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Refresh" />
+                    android:text="@string/last_updated_just_now"
+                    android:textSize="11sp"
+                    android:textColor="?attr/colorOnSurface"
+                    android:alpha="0.6"
+                    android:layout_marginTop="8dp" />
 
                 <TextView
                     android:id="@+id/cooldownLabel"
@@ -154,15 +185,17 @@
             android:id="@+id/metricsCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="12dp">
+            android:layout_marginBottom="16dp"
+            app:cardElevation="3dp"
+            app:cardCornerRadius="20dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -173,7 +206,7 @@
                         android:layout_width="0dp" 
                         android:layout_height="wrap_content" 
                         android:layout_weight="1" 
-                        android:text="Gap —"
+                        android:text="@string/gap_placeholder"
                         android:textSize="14sp"
                         android:padding="8dp"
                         android:background="@drawable/bg_chip" />
@@ -183,7 +216,7 @@
                         android:layout_height="wrap_content" 
                         android:layout_weight="1" 
                         android:layout_marginStart="8dp"
-                        android:text="Range —"
+                        android:text="@string/range_placeholder"
                         android:textSize="14sp"
                         android:padding="8dp"
                         android:background="@drawable/bg_chip" />
@@ -199,7 +232,7 @@
                         android:layout_width="0dp" 
                         android:layout_height="wrap_content" 
                         android:layout_weight="1" 
-                        android:text="Volume —"
+                        android:text="@string/volume_placeholder"
                         android:textSize="14sp"
                         android:padding="8dp"
                         android:background="@drawable/bg_chip" />
@@ -209,7 +242,7 @@
                         android:layout_height="wrap_content" 
                         android:layout_weight="1" 
                         android:layout_marginStart="8dp"
-                        android:text="Activity —"
+                        android:text="@string/activity_placeholder"
                         android:textSize="14sp"
                         android:padding="8dp"
                         android:background="@drawable/bg_chip" />
@@ -219,14 +252,14 @@
                     android:id="@+id/nowcastText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Nowcast —"
+                    android:text="@string/nowcast_placeholder"
                     android:layout_marginTop="6dp" />
 
                 <TextView
                     android:id="@+id/confluenceText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Confluence —"
+                    android:text="@string/confluence_placeholder"
                     android:layout_marginTop="6dp" />
 
                 <LinearLayout
@@ -234,8 +267,8 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:layout_marginTop="8dp">
-                    <TextView android:id="@+id/high24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="H24 —" />
-                    <TextView android:id="@+id/low24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="L24 —" />
+                    <TextView android:id="@+id/high24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/high24_placeholder" />
+                    <TextView android:id="@+id/low24Text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/low24_placeholder" />
                 </LinearLayout>
 
                 <TextView
@@ -243,12 +276,61 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Quality OK"
+                    android:text="@string/quality_ok"
                     android:background="@drawable/bg_chip"
                     android:paddingLeft="12dp"
                     android:paddingRight="12dp"
                     android:paddingTop="8dp"
                     android:paddingBottom="8dp" />
+
+                <!-- Market Regime Display -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/regimeCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:cardElevation="2dp"
+                    app:cardCornerRadius="12dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/regime_title"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textStyle="bold" />
+                        <TextView
+                            android:id="@+id/regimeText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/regime_loading"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorPrimary" />
+                        <TextView
+                            android:id="@+id/regimeStrategy"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/regime_strategy_placeholder"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                        <TextView
+                            android:id="@+id/regimeConfidence"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/regime_confidence_placeholder"
+                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -265,7 +347,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -291,7 +373,7 @@
                         android:id="@+id/biasTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bias: Neutral"
+                        android:text="@string/bias_neutral_placeholder"
                         android:textSize="18sp"
                         android:textStyle="bold" />
 
@@ -299,7 +381,7 @@
                         android:id="@+id/biasConfidence"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Conf. 0%"
+                        android:text="@string/conf_placeholder"
                         android:textSize="14sp"
                         android:layout_marginTop="4dp" />
                 </LinearLayout>
@@ -308,7 +390,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Market Drivers"
+                    android:text="@string/market_drivers_title"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginTop="16dp"
@@ -339,7 +421,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -351,7 +433,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Asia\n01:00–09:00" />
+                        android:text="@string/session_asia_label" />
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/londonBtn"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
@@ -359,7 +441,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginStart="8dp"
-                        android:text="London\n09:00–13:00" />
+                        android:text="@string/session_london_label" />
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/newyorkBtn"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
@@ -367,13 +449,13 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginStart="8dp"
-                        android:text="New York\n14:30–18:00" />
+                        android:text="@string/session_newyork_label" />
                 </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Fix times shown on chart."
+                    android:text="@string/fix_times_hint"
                     android:textSize="12sp"
                     android:layout_marginTop="6dp" />
 
@@ -387,7 +469,7 @@
                     android:paddingTop="6dp"
                     android:paddingBottom="6dp"
                     android:background="@drawable/bg_chip"
-                    android:text="Overlap active"
+                    android:text="@string/overlap_active_label"
                     android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -405,7 +487,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -423,7 +505,7 @@
                         android:paddingRight="10dp"
                         android:paddingTop="4dp"
                         android:paddingBottom="4dp"
-                        android:text="DO"
+                        android:text="@string/do_label"
                         android:textColor="#FFFFFF"
                         android:textSize="12sp"
                         android:background="@drawable/bg_level_tag_do" />
@@ -433,7 +515,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginLeft="10dp"
                         android:fontFamily="monospace"
-                        android:text="—"
+                        android:text="@string/placeholder_dash"
                         android:textSize="16sp" />
                     <TextView
                         android:id="@+id/doDelta"
@@ -466,7 +548,7 @@
                         android:paddingRight="10dp"
                         android:paddingTop="4dp"
                         android:paddingBottom="4dp"
-                        android:text="PDH"
+                        android:text="@string/pdh_label"
                         android:textColor="#FFFFFF"
                         android:textSize="12sp"
                         android:background="@drawable/bg_level_tag_pdh" />
@@ -476,7 +558,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginLeft="10dp"
                         android:fontFamily="monospace"
-                        android:text="—"
+                        android:text="@string/placeholder_dash"
                         android:textSize="16sp" />
                     <TextView
                         android:id="@+id/pdhDelta"
@@ -509,7 +591,7 @@
                         android:paddingRight="10dp"
                         android:paddingTop="4dp"
                         android:paddingBottom="4dp"
-                        android:text="PDL"
+                        android:text="@string/pdl_label"
                         android:textColor="#FFFFFF"
                         android:textSize="12sp"
                         android:background="@drawable/bg_level_tag_pdl" />
@@ -519,7 +601,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginLeft="10dp"
                         android:fontFamily="monospace"
-                        android:text="—"
+                        android:text="@string/placeholder_dash"
                         android:textSize="16sp" />
                     <TextView
                         android:id="@+id/pdlDelta"
@@ -539,7 +621,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Session 50% —"
+                    android:text="@string/session_mid_placeholder"
                     android:textSize="14sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -556,13 +638,13 @@
                 android:id="@+id/alertsSwitch"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Alerts" />
+                android:text="@string/alerts_section_title" />
             <TextView
                 android:id="@+id/alertsSub"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
-                android:text="Quiet hours 22:00–06:00"
+                android:text="@string/quiet_hours_banner_default"
                 android:textSize="12sp" />
         </LinearLayout>
 
@@ -579,12 +661,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Latest Signal"
+                    android:text="@string/latest_signal_title"
                     android:textStyle="bold"
                     android:textSize="16sp" />
 
@@ -593,7 +675,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="—" />
+                    android:text="@string/placeholder_dash" />
 
                 <TextView
                     android:id="@+id/tvSigMeta"
@@ -616,7 +698,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Journal this" />
+                    android:text="@string/action_journal_this" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -633,12 +715,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
-    <TextView
+                android:padding="20dp">
+                <TextView
                     android:id="@+id/eventText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="US CPI in 42m (High)" />
+                    android:text="@string/sample_event_text" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -654,7 +736,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="12dp"
-                android:text="Your plan is protecting you. New entries locked."
+                android:text="@string/plan_lock_banner"
                 android:textSize="14sp" />
         </com.google.android.material.card.MaterialCardView>
 
@@ -670,7 +752,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="12dp"
-                android:text="Degraded feed — using cached/low quality quotes."
+                android:text="@string/feed_banner_degraded"
                 android:textSize="14sp" />
         </com.google.android.material.card.MaterialCardView>
 
@@ -691,14 +773,14 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:text="Alerts" />
+                android:text="@string/alerts_section_title" />
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/openChartBtn"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:text="Open Chart" />
+                android:text="@string/action_view_chart" />
         </LinearLayout>
 
         <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -709,7 +791,7 @@
             android:layout_marginTop="12dp"
             app:backgroundTint="@color/colorPrimary"
             app:tint="@color/colorOnPrimary"
-            android:contentDescription="Add"
+            android:contentDescription="@string/add"
             android:src="@android:drawable/ic_input_add" />
 
             </LinearLayout>

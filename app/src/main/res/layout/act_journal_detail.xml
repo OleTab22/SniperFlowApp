@@ -1,65 +1,235 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent" android:layout_height="match_parent">
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/colorBackground">
 
-    <ScrollView
-        android:layout_width="match_parent" android:layout_height="match_parent">
-        <LinearLayout android:orientation="vertical" android:padding="16dp"
-            android:layout_width="match_parent" android:layout_height="wrap_content">
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+        app:elevation="0dp">
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
+            app:title="@string/journal_title"
+            app:titleTextColor="?attr/colorOnSurface"
+            app:navigationIcon="?attr/homeAsUpIndicator"
+            app:navigationIconTint="?attr/colorOnSurface" />
+    </com.google.android.material.appbar.AppBarLayout>
 
-            <TextView android:id="@+id/title" android:textStyle="bold" android:textSize="20sp" android:text="@string/journal_title"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-            <TextView android:id="@+id/txtRRPlanned" android:layout_marginTop="8dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
-            <TextView android:id="@+id/txtRRReal"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <LinearLayout
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
-            <TextView android:id="@+id/txtContext" android:layout_marginTop="8dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardElevation="4dp"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurface">
+                <TextView
+                    android:id="@+id/title"
+                    android:textStyle="bold"
+                    android:textSize="24sp"
+                    android:text="@string/journal_title"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="20dp"
+                    android:letterSpacing="-0.01" />
+            </com.google.android.material.card.MaterialCardView>
 
-            <TextView android:text="@string/setup_label" android:textStyle="bold" android:layout_marginTop="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
-            <TextView android:id="@+id/txtSetup"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardElevation="3dp"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurface">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/journal_risk_reward"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface"
+                        android:layout_marginBottom="12dp" />
+                    <TextView
+                        android:id="@+id/txtRRPlanned"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="16sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:layout_marginBottom="8dp" />
+                    <TextView
+                        android:id="@+id/txtRRReal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="16sp"
+                        android:textColor="?attr/colorOnSurface" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-            <TextView android:text="@string/notes_label" android:textStyle="bold" android:layout_marginTop="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
-            <TextView android:id="@+id/txtNotes"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardElevation="3dp"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurface">
+                <TextView
+                    android:id="@+id/txtContext"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="15sp"
+                    android:textColor="?attr/colorOnSurface"
+                    android:alpha="0.87"
+                    android:padding="20dp"
+                    android:lineSpacingExtra="4dp" />
+            </com.google.android.material.card.MaterialCardView>
 
-            <TextView android:text="@string/screenshots_label" android:textStyle="bold" android:layout_marginTop="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardElevation="3dp"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurface">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+                    <TextView
+                        android:text="@string/setup_label"
+                        android:textStyle="bold"
+                        android:textSize="18sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp" />
+                    <TextView
+                        android:id="@+id/txtSetup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="15sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:alpha="0.87"
+                        android:lineSpacingExtra="4dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="20dp"
+                app:cardElevation="3dp"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurface">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+                    <TextView
+                        android:text="@string/notes_label"
+                        android:textStyle="bold"
+                        android:textSize="18sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp" />
+                    <TextView
+                        android:id="@+id/txtNotes"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="15sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:alpha="0.87"
+                        android:lineSpacingExtra="4dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardElevation="3dp"
+                app:cardCornerRadius="20dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurface">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+                    <TextView
+                        android:text="@string/screenshots_label"
+                        android:textStyle="bold"
+                        android:textSize="18sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp" />
             <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvShotsDetail" android:layout_width="match_parent"
-                android:layout_height="120dp"/>
+                        android:id="@+id/rvShotsDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="140dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
         </LinearLayout>
-    </ScrollView>
+    </androidx.core.widget.NestedScrollView>
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/fabEdit"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="end|bottom"
-        android:layout_margin="16dp"
-        android:visibility="visible"
-        android:elevation="8dp"
-        android:contentDescription="Edit"
-        android:src="@android:drawable/ic_menu_edit"
-        app:tint="@color/colorOnPrimary"
-        app:backgroundTint="@color/colorPrimary"/>
+        android:layout_margin="20dp"
+        android:layout_marginBottom="80dp"
+        android:text="@string/journal_edit"
+        android:textColor="?attr/colorOnPrimary"
+        app:icon="@android:drawable/ic_menu_edit"
+        app:iconTint="?attr/colorOnPrimary"
+        app:backgroundTint="?attr/colorPrimary"
+        app:cornerRadius="16dp"
+        app:elevation="8dp" />
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/fabDelete"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="end|bottom"
-        android:layout_margin="16dp"
-        android:layout_marginBottom="84dp"
-        android:visibility="visible"
-        android:elevation="8dp"
-        android:contentDescription="Delete"
-        android:src="@android:drawable/ic_menu_delete"
-        app:tint="@android:color/white"
-        app:backgroundTint="@color/colorNegative"/>
+        android:layout_margin="20dp"
+        android:text="@string/journal_delete"
+        android:textColor="@android:color/white"
+        app:icon="@android:drawable/ic_menu_delete"
+        app:iconTint="@android:color/white"
+        app:backgroundTint="?attr/colorError"
+        app:cornerRadius="16dp"
+        app:elevation="8dp" />
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNav"
@@ -68,7 +238,7 @@
         android:layout_gravity="bottom"
         app:menu="@menu/menu_bottom_nav" />
 
-</FrameLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
 
 
 

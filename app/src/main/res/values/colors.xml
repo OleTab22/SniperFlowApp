@@ -15,8 +15,10 @@
     <color name="colorOnBackground">#FFFFFFFF</color>
     <color name="colorSurface">@color/sf_slate</color>
     <color name="colorOnSurface">#FFFFFFFF</color>
+    <color name="colorSurfaceVariant">#25292F</color>
     <color name="colorPositive">@color/sf_green</color>
     <color name="colorNegative">@color/sf_red</color>
     <color name="colorMuted">@color/sf_gray</color>
     <color name="colorWarning">#F59E0B</color>
+    <color name="colorError">@color/sf_red</color>
 </resources>

@@ -1,13 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="84dp" android:layout_height="84dp" android:layout_marginEnd="8dp">
-    <ImageView android:id="@+id/img" android:layout_width="match_parent"
-        android:layout_height="match_parent" android:scaleType="centerCrop"/>
-    <TextView android:id="@+id/btnRemove" android:text="×" android:gravity="center"
-        android:layout_gravity="end|top" android:layout_margin="6dp"
-        android:background="@android:color/black" android:textColor="@android:color/white"
-        android:layout_width="22dp" android:layout_height="22dp"/>
-</FrameLayout>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="84dp"
+    android:layout_height="84dp"
+    android:layout_marginEnd="8dp"
+    app:cardElevation="2dp"
+    app:cardCornerRadius="12dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="?attr/colorSurface">
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        <ImageView
+            android:id="@+id/img"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/screenshot_content_description" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRemove"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="end|top"
+            android:layout_margin="6dp"
+            android:text="@string/remove_button_label"
+            android:textSize="20sp"
+            android:textColor="@android:color/white"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            app:backgroundTint="?attr/colorError"
+            app:cornerRadius="14dp"
+            style="@style/Widget.MaterialComponents.Button"
+            android:contentDescription="@string/remove_button_description" />
+    </FrameLayout>
+</com.google.android.material.card.MaterialCardView>
 
 
 

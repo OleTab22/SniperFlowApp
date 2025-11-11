@@ -1,58 +1,132 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:layout_marginVertical="6dp" android:layout_marginHorizontal="12dp">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="6dp"
+    android:layout_marginHorizontal="16dp"
+    app:cardElevation="2dp"
+    app:cardCornerRadius="16dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="?attr/colorSurface"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground">
 
-    <LinearLayout android:orientation="vertical" android:padding="12dp"
-        android:layout_width="match_parent" android:layout_height="wrap_content">
-        <LinearLayout android:orientation="horizontal" android:gravity="center_vertical"
-            android:layout_width="match_parent" android:layout_height="wrap_content">
-            <ImageView android:id="@+id/ivStatus" android:layout_width="12dp" android:layout_height="12dp"
-                android:src="@android:drawable/presence_online" android:contentDescription="@string/status_indicator"/>
-            <TextView android:id="@+id/tvTitle" android:textStyle="bold"
-                android:text="XAUUSD · M5" android:layout_width="0dp"
-                android:layout_weight="1" android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"/>
-            <ImageView android:id="@+id/ivShots" android:layout_width="18dp" android:layout_height="18dp"
-                android:src="@android:drawable/ic_menu_camera" android:visibility="gone"
-                android:contentDescription="@string/has_screenshots"/>
-            <TextView android:id="@+id/tvRr" android:text="R:R —"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:background="@android:color/darker_gray"
-                android:textColor="@android:color/white"
-                android:padding="6dp" android:layout_marginStart="8dp"/>
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+        <LinearLayout
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/journal_status_open"
+                android:textSize="11sp"
+                app:chipMinHeight="24dp"
+                app:chipBackgroundColor="?attr/colorPrimary"
+                app:chipStrokeWidth="0dp" />
+            <TextView
+                android:id="@+id/tvTitle"
+                android:textStyle="bold"
+                android:text="@string/journal_title_placeholder"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:textSize="16sp"
+                android:textColor="?attr/colorOnSurface" />
+            <ImageView
+                android:id="@+id/ivShots"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@android:drawable/ic_menu_camera"
+                android:visibility="gone"
+                android:contentDescription="@string/has_screenshots"
+                app:tint="?attr/colorPrimary"
+                android:layout_marginStart="8dp" />
+            <com.google.android.material.chip.Chip
+                android:id="@+id/tvRr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/journal_rr_placeholder"
+                android:textSize="11sp"
+                app:chipMinHeight="28dp"
+                app:chipBackgroundColor="?attr/colorSurfaceVariant"
+                app:chipStrokeWidth="0dp"
+                android:layout_marginStart="8dp" />
         </LinearLayout>
 
-        <LinearLayout android:orientation="horizontal" android:layout_marginTop="6dp"
-            android:layout_width="match_parent" android:layout_height="wrap_content">
-            <TextView android:id="@+id/chipBias" android:text="Bull"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:background="@android:color/transparent" android:padding="4dp"/>
-            <TextView android:id="@+id/chipSession" android:text="London"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginStart="8dp" android:padding="4dp"/>
-            <TextView android:id="@+id/chipQueued" android:text="Queued to sync"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginStart="8dp" android:padding="4dp"
-                android:background="@android:color/holo_orange_dark"
-                android:textColor="@android:color/white" android:visibility="gone"/>
-        </LinearLayout>
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupMeta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            app:chipSpacing="6dp"
+            app:chipSpacingHorizontal="6dp">
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipBias"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/journal_bias_placeholder"
+                android:textSize="11sp"
+                app:chipMinHeight="26dp"
+                app:chipBackgroundColor="?attr/colorSurfaceVariant"
+                app:chipStrokeWidth="0dp" />
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipSession"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/journal_session_placeholder"
+                android:textSize="11sp"
+                app:chipMinHeight="26dp"
+                app:chipBackgroundColor="?attr/colorSurfaceVariant"
+                app:chipStrokeWidth="0dp" />
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQueued"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/journal_queue_badge"
+                android:textSize="11sp"
+                android:visibility="gone"
+                app:chipMinHeight="26dp"
+                app:chipBackgroundColor="?attr/colorError"
+                app:chipStrokeWidth="0dp" />
+        </com.google.android.material.chip.ChipGroup>
 
-        <TextView android:id="@+id/tvSubtitle"
-            android:text="MSS sweep + DO @ 2 431.20"
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:text="@string/journal_subtitle_placeholder"
+            android:layout_marginTop="10dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="?attr/colorOnSurface"
+            android:alpha="0.87" />
+
+        <TextView
+            android:id="@+id/tvMeta"
+            android:text="@string/journal_meta_placeholder"
+            android:textSize="11sp"
+            android:textColor="?attr/colorOnSurface"
+            android:alpha="0.6"
             android:layout_marginTop="6dp"
-            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
 
-        <TextView android:id="@+id/tvMeta"
-            android:text="12 Aug 14:23"
-            android:textSize="12sp"
-            android:textColor="@android:color/darker_gray"
-            android:layout_marginTop="2dp"
-            android:layout_width="match_parent" android:layout_height="wrap_content"/>
-
-        <LinearLayout android:id="@+id/tagsRow" android:orientation="horizontal"
-            android:layout_marginTop="8dp"
-            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/tagsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            app:chipSpacing="6dp"
+            app:chipSpacingHorizontal="6dp" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
 

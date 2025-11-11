@@ -59,6 +59,20 @@
             android:exported="false"
             android:theme="@style/Theme.SniperFlow"
             android:parentActivityName=".MainActivity" />
+        
+        <!-- Onboarding -->
+        <activity
+            android:name=".onboarding.OnboardingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SniperFlow"
+            android:parentActivityName=".MainActivity" />
+        
+        <!-- Alert Detail -->
+        <activity
+            android:name=".ui.alerts.AlertDetailActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SniperFlow"
+            android:parentActivityName=".MainActivity" />
     </application>
 
 </manifest>

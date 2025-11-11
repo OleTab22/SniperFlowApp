@@ -9,12 +9,14 @@ import com.example.sniperflow.data.journal.JournalSyncWorker
 import androidx.room.Room
 import com.example.sniperflow.domain.metrics.UserTimezone
 import com.example.sniperflow.settings.SettingsRepository
+import com.example.sniperflow.util.LocaleManager
 
 class App : Application() {
     lateinit var db: AppDb; private set
 
     override fun onCreate() {
         super.onCreate()
+        LocaleManager.updateLocale(this, LocaleManager.getStoredLanguage(this))
         db = Room.databaseBuilder(this, AppDb::class.java, "sniperflow.db")
             .fallbackToDestructiveMigration(true)
             .build()
@@ -24,6 +26,8 @@ class App : Application() {
         com.example.sniperflow.ui.keepalive.BackendKeepAlive.init()
         // Initialize user-selected timezone (default Africa/Johannesburg)
         runCatching { UserTimezone.tzId = SettingsRepository(this).loadTimezone() }
+        // Initialize FCM notification channels
+        com.example.sniperflow.notifications.FcmNotificationManager.initialize(this)
 
         // Ensure screenshots/screen recording are allowed across the app
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {

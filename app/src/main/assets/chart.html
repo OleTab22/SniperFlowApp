@@ -39,6 +39,17 @@
           i.src = u.toString();
         } catch (e) { console.log('setSymbol error', e); }
       }
+      window.setOverlaysFromAndroid = function(data) {
+        // Store overlay data - TradingView free widget doesn't support custom overlays
+        // Would need TradingView Pro or custom chart library for full overlay support
+        window.overlayData = data;
+        console.log('Overlays set:', data);
+      }
+      window.navigateToTimestamp = function(ts) {
+        // Navigate to timestamp - TradingView widget doesn't support this
+        // Placeholder for now
+        console.log('Navigate to timestamp:', ts);
+      }
     </script>
   </body>
   </html>

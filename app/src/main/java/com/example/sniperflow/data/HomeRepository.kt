@@ -15,7 +15,7 @@ class HomeRepository(
     private val api: BrokerApi,
     io: CoroutineDispatcher = Dispatchers.IO
 ) {
-    /** Pull /home every 10 seconds; adapt to 30s when providers blocked. */
+    // Poll /home every 10s, slow to 30s if providers are down
     @Suppress("unused")
     val homePollFlow: Flow<HomeResponse> = flow {
         var period = 10_000L
@@ -31,7 +31,7 @@ class HomeRepository(
         }
     }.flowOn(io).distinctUntilChanged()
 
-    /** 1s ticker useful for countdowns on the client. */
+    // 1s ticker for countdown timers
     @Suppress("unused")
     val ticker1s: Flow<Long> = flow {
         while (true) {

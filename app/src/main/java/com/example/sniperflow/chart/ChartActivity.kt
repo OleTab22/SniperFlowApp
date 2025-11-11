@@ -14,15 +14,16 @@ import android.webkit.WebResourceError
 import androidx.activity.OnBackPressedCallback
 import timber.log.Timber
 import android.widget.Button
-import androidx.appcompat.app.AppCompatActivity
 import com.example.sniperflow.R
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.appbar.MaterialToolbar
 import android.content.Intent
 import com.example.sniperflow.ui.journal.JournalActivity
 import com.example.sniperflow.notifications.NotificationsActivity
 import com.example.sniperflow.settings.SettingsActivity
+import com.example.sniperflow.util.LocaleAwareActivity
 
-class ChartActivity : AppCompatActivity() {
+class ChartActivity : LocaleAwareActivity() {
 	private lateinit var webView: WebView
 	private var pageReady: Boolean = false
 	private val jsQueue: MutableList<String> = mutableListOf()
@@ -31,6 +32,11 @@ class ChartActivity : AppCompatActivity() {
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
 		setContentView(R.layout.activity_chart)
+
+		// Setup toolbar
+		findViewById<MaterialToolbar>(R.id.toolbar)?.apply {
+			setNavigationOnClickListener { finish() }
+		}
 
 		webView = findViewById(R.id.tvWebView)
 
@@ -65,6 +71,22 @@ class ChartActivity : AppCompatActivity() {
 				pageReady = true
 				jsQueue.forEach { cmd -> view.evaluateJavascript(cmd, null) }
 				jsQueue.clear()
+				
+				// Load overlays if provided in Intent
+				intent?.let {
+					val doPrice = it.getDoubleExtra("do_price", 0.0).takeIf { p -> p > 0 }
+					val pdh = it.getDoubleExtra("pdh", 0.0).takeIf { p -> p > 0 }
+					val pdl = it.getDoubleExtra("pdl", 0.0).takeIf { p -> p > 0 }
+					val timestamp = it.getLongExtra("timestamp", 0L)
+					if (doPrice != null || pdh != null || pdl != null) {
+						if (timestamp > 0) {
+							navigateToTimestamp(timestamp, doPrice, pdh, pdl)
+						} else {
+							setOverlays(doPrice, pdh, pdl)
+						}
+					}
+				}
+				
 				super.onPageFinished(view, url)
 			}
 
@@ -80,7 +102,8 @@ class ChartActivity : AppCompatActivity() {
 				super.onReceivedError(view, request, error)
 			}
 
-			@Suppress("DEPRECATION")
+			@Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+			@Deprecated("Deprecated WebView callback retained for backward compatibility")
 			override fun onReceivedError(
 				view: WebView,
 				errorCode: Int,
@@ -142,6 +165,26 @@ class ChartActivity : AppCompatActivity() {
 	@Suppress("unused")
 	private fun setSymbol(symbol: String, res: String = "60") {
 		runJs("window.setSymbolFromAndroid('" + symbol + "', '" + res + "');")
+	}
+	
+	// Set chart overlays - DO, PDH/PDL, session shading, London Fix
+	fun setOverlays(doPrice: Double?, pdh: Double?, pdl: Double?, showSessions: Boolean = true, londonFix: Long? = null) {
+		val overlayData = """
+		{
+			"do": ${doPrice ?: "null"},
+			"pdh": ${pdh ?: "null"},
+			"pdl": ${pdl ?: "null"},
+			"showSessions": $showSessions,
+			"londonFix": ${londonFix ?: "null"}
+		}
+		""".trimIndent()
+		runJs("window.setOverlaysFromAndroid($overlayData);")
+	}
+	
+	// Deep link to chart with timestamp - used from alerts
+	fun navigateToTimestamp(timestampMs: Long, doPrice: Double?, pdh: Double?, pdl: Double?) {
+		setOverlays(doPrice, pdh, pdl, showSessions = true)
+		runJs("window.navigateToTimestamp($timestampMs);")
 	}
 
 	override fun onPause() {

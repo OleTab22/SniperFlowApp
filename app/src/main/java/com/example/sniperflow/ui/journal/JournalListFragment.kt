@@ -10,10 +10,11 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.sniperflow.App
 import android.view.ViewGroup
 import com.example.sniperflow.R
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import com.example.sniperflow.ui.UiState
 import com.example.sniperflow.ui.bindState
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class JournalListFragment : Fragment() {
     private lateinit var adapter: JournalListAdapter
@@ -39,7 +40,7 @@ class JournalListFragment : Fragment() {
             }
         }
 
-        v.findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab).setOnClickListener {
+        v.findViewById<ExtendedFloatingActionButton>(R.id.fab)?.setOnClickListener {
             NewJournalSheet().show(parentFragmentManager, "newJournal")
         }
 

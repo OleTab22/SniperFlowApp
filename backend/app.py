@@ -3445,6 +3445,145 @@ async def v1_signals_pro_diagnostics():
         raise HTTPException(status_code=500, detail=f"diagnostics: {e}")
 
 
+def _calculate_trend_strength(closes: list) -> float:
+    """Calculate trend strength (0-1) using linear regression slope."""
+    if len(closes) < 10:
+        return 0.5
+    
+    n = len(closes)
+    x_mean = (n - 1) / 2.0
+    y_mean = sum(closes) / n
+    
+    numerator = sum((i - x_mean) * (closes[i] - y_mean) for i in range(n))
+    denominator = sum((i - x_mean) ** 2 for i in range(n))
+    
+    if denominator == 0:
+        return 0.5
+    
+    slope = numerator / denominator
+    max_slope = max(closes) - min(closes)
+    
+    return abs(slope / max_slope) if max_slope > 0 else 0.5
+
+
+def _get_strategy_for_regime(regime: str) -> str:
+    """Get recommended strategy for market regime."""
+    strategies = {
+        "RANGE_BOUND": "Mean reversion setups (PDH/PDL sweeps, DO reclaims)",
+        "TRENDING": "Trend-following setups (breakouts, pullbacks to trend)",
+        "VOLATILE": "Reduce position size, wider stops, wait for clarity",
+        "NEUTRAL": "Monitor market conditions, wait for clearer setup"
+    }
+    return strategies.get(regime, "Monitor market conditions")
+
+
+@router.get("/v1/regime/current")
+async def v1_regime_current(symbol: str = "XAUUSD"):
+    """
+    Detect current market regime using:
+    - Variance ratio (from microstructure engine)
+    - ATR expansion/contraction
+    - Price range vs ATR ratio
+    - Trend strength
+    
+    Returns regime classification: RANGE_BOUND, TRENDING, VOLATILE, or NEUTRAL
+    """
+    try:
+        # Get candles
+        candles, last_price = await get_candles(symbol)
+        if not candles or len(candles) < 24:
+            return {
+                "regime": "UNKNOWN",
+                "confidence": 0.0,
+                "message": "Insufficient data",
+                "metrics": {}
+            }
+        
+        # Get microstructure features (variance ratio)
+        vr = 1.0
+        micro_features = None
+        if _micro_enabled and _micro_engine:
+            micro_features = _micro_engine.features()
+            if micro_features:
+                vr = micro_features.get("vr", 1.0)
+        
+        # Calculate ATR
+        atr = _wilder_atr20_from_ohlc1m(candles)
+        if not atr or atr <= 0:
+            # Fallback ATR calculation
+            if last_price:
+                atr = max(0.1, 0.008 * float(last_price))  # ~0.8% fallback
+            else:
+                return {
+                    "regime": "UNKNOWN",
+                    "confidence": 0.0,
+                    "message": "Unable to calculate ATR",
+                    "metrics": {}
+                }
+        
+        # Price range (last 24 candles ~ 24 minutes for 1m data)
+        recent_candles = candles[-24:] if len(candles) >= 24 else candles
+        price_range = max(c["h"] for c in recent_candles) - min(c["l"] for c in recent_candles)
+        range_atr_ratio = price_range / atr if atr > 0 else 0
+        
+        # Trend strength
+        closes = [c["c"] for c in recent_candles]
+        trend_strength = _calculate_trend_strength(closes)
+        
+        # Historical ATR for volatility comparison (if we have enough data)
+        volatility_expanding = False
+        if len(candles) >= 48:
+            try:
+                older_candles = candles[:-24]
+                older_atr = _wilder_atr20_from_ohlc1m(older_candles)
+                if older_atr and older_atr > 0:
+                    volatility_expanding = atr > older_atr * 1.2  # 20% increase
+            except Exception:
+                pass
+        
+        # Classify regime
+        regime = "NEUTRAL"
+        confidence = 0.50
+        
+        # Range-bound: low range/ATR ratio + low variance ratio (mean reversion)
+        if range_atr_ratio < 1.5 and vr < 1.0:
+            regime = "RANGE_BOUND"
+            confidence = 0.85
+        # Trending: strong trend + higher variance ratio (momentum)
+        elif trend_strength > 0.6 and vr >= 1.0:
+            regime = "TRENDING"
+            confidence = 0.80
+        # Volatile: expanding volatility or very high range/ATR
+        elif volatility_expanding or range_atr_ratio > 2.5:
+            regime = "VOLATILE"
+            confidence = 0.75
+        # Neutral: default fallback
+        else:
+            regime = "NEUTRAL"
+            confidence = 0.50
+        
+        # Get recommended strategy
+        recommended_strategy = _get_strategy_for_regime(regime)
+        
+        return {
+            "regime": regime,
+            "confidence": round(confidence, 2),
+            "recommended_strategy": recommended_strategy,
+            "metrics": {
+                "variance_ratio": round(vr, 3),
+                "range_atr_ratio": round(range_atr_ratio, 2),
+                "trend_strength": round(trend_strength, 2),
+                "atr": round(atr, 2),
+                "price_range": round(price_range, 2),
+                "volatility_expanding": volatility_expanding
+            },
+            "timestamp": now_utc_ms()
+        }
+    except Exception as e:
+        logging.exception(f"Regime detection error: {e}")
+        raise HTTPException(status_code=500, detail=f"regime detection: {e}")
+
+
 @router.get("/v1/metrics/ledger")
 async def v1_metrics_ledger(limit: int = 200):
     try:

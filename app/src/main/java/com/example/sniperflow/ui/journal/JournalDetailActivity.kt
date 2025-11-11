@@ -4,7 +4,6 @@ import android.app.Dialog
 import android.net.Uri
 import android.os.Bundle
 import android.widget.ImageView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import coil.load
@@ -13,14 +12,22 @@ import com.example.sniperflow.R
 import com.example.sniperflow.data.journal.JournalEntity
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import android.content.Intent
+import com.example.sniperflow.util.LocaleAwareActivity
 
-class JournalDetailActivity : AppCompatActivity() {
+class JournalDetailActivity : LocaleAwareActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.act_journal_detail)
+
+        // Setup toolbar
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        toolbar.setNavigationOnClickListener { finish() }
 
         val id = intent.getIntExtra("id", -1)
         lifecycleScope.launch {

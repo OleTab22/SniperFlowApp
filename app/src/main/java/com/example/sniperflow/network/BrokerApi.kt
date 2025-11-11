@@ -1,5 +1,6 @@
 package com.example.sniperflow.network
 
+import com.squareup.moshi.Json
 import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Body
@@ -73,6 +74,10 @@ interface BrokerApi {
     // --- Pro signals (institutional-lite) ---
     @GET("/v1/signals/pro/last")
     suspend fun proSignalLast(): ProSignalLast
+
+    // --- Market Regime Detection ---
+    @GET("/v1/regime/current")
+    suspend fun regimeCurrent(@Query("symbol") symbol: String = "XAUUSD"): RegimeResponse
 }
 
 data class JournalReq(
@@ -143,6 +148,25 @@ data class ProSignal(
     val confidence: Double?,
     val regime: String?,
     val reason: String? = null
+)
+
+// --- Market Regime Models ---
+data class RegimeResponse(
+    val regime: String,
+    val confidence: Double,
+    @Json(name = "recommended_strategy") val recommendedStrategy: String?,
+    val metrics: RegimeMetrics?,
+    val timestamp: Long?,
+    val message: String? = null
+)
+
+data class RegimeMetrics(
+    @Json(name = "variance_ratio") val varianceRatio: Double?,
+    @Json(name = "range_atr_ratio") val rangeAtrRatio: Double?,
+    @Json(name = "trend_strength") val trendStrength: Double?,
+    val atr: Double?,
+    @Json(name = "price_range") val priceRange: Double?,
+    @Json(name = "volatility_expanding") val volatilityExpanding: Boolean?
 )
 
 

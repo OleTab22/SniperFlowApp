@@ -1,13 +1,13 @@
 package com.example.sniperflow.ui.journal
 
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.sniperflow.R
 import com.example.sniperflow.App
+import com.example.sniperflow.util.LocaleAwareActivity
 import kotlinx.coroutines.launch
 
-class JournalActivity : AppCompatActivity() {
+class JournalActivity : LocaleAwareActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_journal)
