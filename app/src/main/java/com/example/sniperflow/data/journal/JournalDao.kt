@@ -36,6 +36,22 @@ interface JournalDao {
 
     @Query("DELETE FROM journal WHERE id=:id")
     suspend fun deleteById(id: Int)
+
+    @Query(
+        "SELECT COALESCE(SUM(CASE WHEN realizedRR < 0 THEN -realizedRR ELSE 0 END), 0.0) " +
+        "FROM journal WHERE createdAt BETWEEN :startMillis AND :endMillis"
+    )
+    suspend fun sumLossRBetween(startMillis: Long, endMillis: Long): Double?
+
+    @Query("SELECT COUNT(*) FROM journal WHERE createdAt BETWEEN :startMillis AND :endMillis")
+    suspend fun countTradesBetween(startMillis: Long, endMillis: Long): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM journal " +
+        "WHERE createdAt BETWEEN :startMillis AND :endMillis " +
+        "AND LOWER(session) = LOWER(:session)"
+    )
+    suspend fun countTradesForSession(session: String, startMillis: Long, endMillis: Long): Int
 }
 
 

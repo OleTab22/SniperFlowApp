@@ -338,7 +338,7 @@ class MainActivity : LocaleAwareActivity() {
             // Session windows relative to selected timezone (default Africa/Johannesburg)
             val tz = UserTimezone.timeZone()
             val now = Calendar.getInstance(tz)
-            val h = now.get(Calendar.HOUR_OF_DAY)
+            val h = now.get( Calendar.HOUR_OF_DAY)
             val m = now.get(Calendar.MINUTE)
             fun inRange(startH: Int, startM: Int, endH: Int, endM: Int): Boolean {
                 val nowMin = h * 60 + m

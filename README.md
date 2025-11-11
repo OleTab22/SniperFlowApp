@@ -3,27 +3,53 @@
 SniperFlow is a focused Android trading companion for gold (XAU/USD). It surfaces context you actually use intraday — bias and drivers, session timing, key levels — and gives you a fast, offline‑first journal. Educational tool only — not financial advice.
 
 ## Highlights
-- Home dashboard
+- **Home dashboard**
   - Live price, 24h change and sparkline
-  - Bias Ring with Nowcast drivers (DXY, real yields, VIX, momentum)
-  - Market metric chips (Gap %, Range×ATR20, Volume pctile, Activity)
-  - Sessions tracker (Asia/London/New York) + session mid distance
+  - Bias Ring with driver chips (DXY, real yields, VIX, momentum)
+  - Market regime card with strategy guidance and confidence
+  - Sessions tracker (Asia/London/New York) + minutes‑left tap actions
   - Key levels pills (DO/PDH/PDL) with deltas
-  - Quality state and provider status cues; plan‑lock banner
+  - Quality state and provider status cues; plan‑lock banner + gate receipts
   - Optional WS ticks; graceful fallback to polling/cached
-- Journal (Room + WorkManager)
-  - Add/edit entries with tags and screenshots; swipe‑to‑delete
+- **Journal (Room + WorkManager)**
+  - Add/edit entries with setup/context chips, R metrics, screenshots
   - CSV export to Documents; offline first with background sync to backend `/v1/journal`
   - Detail screen with R:R, context, shots gallery
-  - Quick‑journal FAB from Home
-- Chart
+  - Daily loss R and trade counts feed Plan‑Lock and GateEvaluator
+- **Guided onboarding**
+  - ViewPager2 tour covering sessions, risk discipline, news locks, localization, notifications
+- **Localization**
+  - Full string coverage in English, isiZulu, Afrikaans with runtime switching
+- **Notifications**
+  - FCM with category toggles (plan ready, gates, macro, news) and quiet hours
+  - Android 13+ runtime permission handling for `POST_NOTIFICATIONS`
+- **Settings**
+  - Unified screen for language, plan‑lock thresholds, gate toggles, privacy export/delete, refresh cooldown, timezone
+  - Optional “Test API” ping to `/health`
+- **Chart**
   - TradingView embed loaded from `app/src/main/assets/chart.html`
   - Timeframe shortcuts (15m/1h/4h/1D) bridged via JS
-- Settings
-  - Epsilon (price step), cooldown (refresh throttle), timezone (affects sessions)
-  - Optional “Test API” ping to `/health`
-- Auth (optional)
-  - Simple email/password with Firebase Auth (Login/Register screens)
+- **Auth (optional)**
+  - Email/password with Firebase Auth (Login/Register screens)
+
+## Release Notes
+
+### v1.0 – Trading Companion Upgrade (post‑prototype)
+- **End‑to‑end localization**: every layout and string now lives in resources with translations for English, isiZulu, and Afrikaans. Users can switch languages in settings and the entire UI refreshes instantly.
+- **Guided onboarding tour**: first‑launch ViewPager2 experience explains sessions, risk discipline, news locks, and notification options, giving new traders context before they reach the dashboard.
+- **Market regime intelligence**: new regime card on the home screen calls the `/v1/regime/current` backend, classifies market state (range, trend, volatile, neutral), suggests strategy focus, and colors/confidence accordingly.
+- **GateEvaluator + Plan‑Lock integration**: alerts are filtered through updated gate logic fed by live journal metrics (daily loss R, trades today) and produce JSON receipts shown in the UI. Plan‑Lock banner now reacts to the same data.
+- **Journal enhancements**: revamped bottom sheet with setup/context chips, R metrics, screenshot grid, and queued sync indicators. Detail view reflects the richer metadata and sync state.
+- **Notification center overhaul**: FCM categories, quiet hours scheduling, and Android 13 permission prompts ensure respectful delivery. Push manager enforces `POST_NOTIFICATIONS` checks before displaying alerts.
+- **Settings consolidation**: language selector, gate toggles, plan‑lock thresholds, privacy export/delete, refresh cooldown, timezone, and API test now share one “Save All Settings” flow.
+- **Screen capture compatibility**: application lifecycle and base activities clear `FLAG_SECURE`, ensuring traders can record walkthroughs on devices (including Samsung) without root tweaks.
+- **Backend upgrades**:
+  - New FastAPI endpoint `/v1/regime/current` combines ATR expansion, variance ratio, trend strength, and microstructure metrics to classify market regimes.
+  - Journal stats aggregation query powers the app’s risk checks.
+  - Documentation refresh across `BACKEND_IMPROVEMENTS.md`, `MICROSTRUCTURE_GUIDE.md`, and `UPGRADE_SUMMARY.md` to match the upgraded features.
+- **Quality & lint fixes**: replaced all hardcoded layout strings, addressed lint warnings (baseline alignment, focusable chips, deprecated APIs), removed redundant qualifiers/imports, and updated LocaleManager utilities.
+
+These innovations turn the original prototype into a localized, risk‑aware trading companion ready for real intraday desk use.
 
 ## Project structure
 - Android app: `app/`

@@ -302,7 +302,7 @@
                             android:layout_height="wrap_content"
                             android:text="@string/regime_title"
                             android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textColor="@color/colorMuted"
                             android:textStyle="bold" />
                         <TextView
                             android:id="@+id/regimeText"
@@ -320,7 +320,7 @@
                             android:layout_marginTop="4dp"
                             android:text="@string/regime_strategy_placeholder"
                             android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
+                            android:textColor="@color/colorMuted" />
                         <TextView
                             android:id="@+id/regimeConfidence"
                             android:layout_width="wrap_content"
@@ -328,7 +328,7 @@
                             android:layout_marginTop="4dp"
                             android:text="@string/regime_confidence_placeholder"
                             android:textSize="11sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
+                            android:textColor="@color/colorMuted" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
