@@ -11,7 +11,8 @@ import org.junit.Test
 class AlertEngineTest {
     @Test
     fun touch_then_cooldown_blocks() {
-        val st = LevelState()
+        // Touch requires a transition from outside the price band into it.
+        val st = LevelState(lastSide = -1)
         val lvl = LevelDef("PDH", 2430.0)
         val p = AlertParams(epsilon = 0.2, cooldownMs = 300_000)
         val t0 = 1_000_000L

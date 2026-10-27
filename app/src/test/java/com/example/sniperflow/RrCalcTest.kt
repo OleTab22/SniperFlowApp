@@ -13,7 +13,7 @@ private fun rr(entry:Double?, sl:Double?, tp:Double?): Double? {
 
 class RrCalcTest {
     @Test fun rr_basic() {
-        val r = rr(100.0, 99.0, 101.0)
+        val r = rr(100.0, 99.0, 102.0)
         assertEquals(2.0, r!!, 1e-6)
     }
     @Test fun rr_nulls() {

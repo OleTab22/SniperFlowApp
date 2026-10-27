@@ -1,0 +1,30 @@
+{
+  "_comment": "CI-only synthetic Firebase identifiers. Not connected to any real Firebase project. Never use for release builds.",
+  "project_info": {
+    "project_number": "123456789012",
+    "project_id": "sniperflow-ci-placeholder",
+    "storage_bucket": "sniperflow-ci-placeholder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:0000000000000000",
+        "android_client_info": {
+          "package_name": "com.example.sniperflow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "CI_ONLY_NOT_A_REAL_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
