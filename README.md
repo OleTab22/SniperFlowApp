@@ -115,7 +115,9 @@ Unit-test sources are in [`app/src/test/`](app/src/test/). Run them with:
 ./gradlew test
 ```
 
-The repository also contains Android build and test automation in [GitHub Actions](https://github.com/OleTab22/SniperFlowApp/actions). **Check its latest run results before relying on a green build**; not all historical Android workflow runs have passed. An example Firebase configuration may be needed for reproducible builds.
+The repository contains Android build and test automation in [GitHub Actions](https://github.com/OleTab22/SniperFlowApp/actions). A [verified run on 27 October 2026](https://github.com/OleTab22/SniperFlowApp/actions/runs/40486078174) successfully completed the debug APK build, JVM unit-test task, and Android lint. The workflow and two corrected test scenarios are proposed in [PR #6](https://github.com/OleTab22/SniperFlowApp/pull/6).
+
+CI uses **synthetic Firebase configuration for compile-only verification**. It does not prove live Firebase Authentication or notification integrations work. Those require a real Firebase project and dedicated integration testing.
 
 The app is an evolving project. External data providers can be rate-limited or unavailable, the hosted API may take time to start, and market context must not be treated as a guaranteed signal. No live trading or return claims are made here.
 
