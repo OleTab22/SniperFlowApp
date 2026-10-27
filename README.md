@@ -1,184 +1,126 @@
-# SniperFlow (XAUUSD)
+# SniperFlow
 
-SniperFlow is a focused Android trading companion for gold (XAU/USD). It surfaces context you actually use intraday — bias and drivers, session timing, key levels — and gives you a fast, offline‑first journal. Educational tool only — not financial advice.
+**An Android trading companion built around XAU/USD (gold).**
 
-## Highlights
-- **Home dashboard**
-  - Live price, 24h change and sparkline
-  - Bias Ring with driver chips (DXY, real yields, VIX, momentum)
-  - Market regime card with strategy guidance and confidence
-  - Sessions tracker (Asia/London/New York) + minutes‑left tap actions
-  - Key levels pills (DO/PDH/PDL) with deltas
-  - Quality state and provider status cues; plan‑lock banner + gate receipts
-  - Optional WS ticks; graceful fallback to polling/cached
-- **Journal (Room + WorkManager)**
-  - Add/edit entries with setup/context chips, R metrics, screenshots
-  - CSV export to Documents; offline first with background sync to backend `/v1/journal`
-  - Detail screen with R:R, context, shots gallery
-  - Daily loss R and trade counts feed Plan‑Lock and GateEvaluator
-- **Guided onboarding**
-  - ViewPager2 tour covering sessions, risk discipline, news locks, localization, notifications
-- **Localization**
-  - Full string coverage in English, isiZulu, Afrikaans with runtime switching
-- **Notifications**
-  - FCM with category toggles (plan ready, gates, macro, news) and quiet hours
-  - Android 13+ runtime permission handling for `POST_NOTIFICATIONS`
-- **Settings**
-  - Unified screen for language, plan‑lock thresholds, gate toggles, privacy export/delete, refresh cooldown, timezone
-  - Optional “Test API” ping to `/health`
-- **Chart**
-  - TradingView embed loaded from `app/src/main/assets/chart.html`
-  - Timeframe shortcuts (15m/1h/4h/1D) bridged via JS
-- **Auth (optional)**
-  - Email/password with Firebase Auth (Login/Register screens)
+SniperFlow brings market context, session timing, risk checks, and a trade journal into one mobile experience. The aim is to help traders follow a consistent process: prepare for a session, assess conditions, review alerts, and record their decisions.
 
-## Release Notes
+Built with **Kotlin/Android** and an optional **Python/FastAPI** backend. This is a personal software project and educational tool—not a trade execution platform or financial advice.
 
-### v1.0 – Trading Companion Upgrade (post‑prototype)
-- **End‑to‑end localization**: every layout and string now lives in resources with translations for English, isiZulu, and Afrikaans. Users can switch languages in settings and the entire UI refreshes instantly.
-- **Guided onboarding tour**: first‑launch ViewPager2 experience explains sessions, risk discipline, news locks, and notification options, giving new traders context before they reach the dashboard.
-- **Market regime intelligence**: new regime card on the home screen calls the `/v1/regime/current` backend, classifies market state (range, trend, volatile, neutral), suggests strategy focus, and colors/confidence accordingly.
-- **GateEvaluator + Plan‑Lock integration**: alerts are filtered through updated gate logic fed by live journal metrics (daily loss R, trades today) and produce JSON receipts shown in the UI. Plan‑Lock banner now reacts to the same data.
-- **Journal enhancements**: revamped bottom sheet with setup/context chips, R metrics, screenshot grid, and queued sync indicators. Detail view reflects the richer metadata and sync state.
-- **Notification center overhaul**: FCM categories, quiet hours scheduling, and Android 13 permission prompts ensure respectful delivery. Push manager enforces `POST_NOTIFICATIONS` checks before displaying alerts.
-- **Settings consolidation**: language selector, gate toggles, plan‑lock thresholds, privacy export/delete, refresh cooldown, timezone, and API test now share one “Save All Settings” flow.
-- **Screen capture compatibility**: application lifecycle and base activities clear `FLAG_SECURE`, ensuring traders can record walkthroughs on devices (including Samsung) without root tweaks.
-- **Backend upgrades**:
-  - New FastAPI endpoint `/v1/regime/current` combines ATR expansion, variance ratio, trend strength, and microstructure metrics to classify market regimes.
-  - Journal stats aggregation query powers the app’s risk checks.
-  - Documentation refresh across `BACKEND_IMPROVEMENTS.md`, `MICROSTRUCTURE_GUIDE.md`, and `UPGRADE_SUMMARY.md` to match the upgraded features.
-- **Quality & lint fixes**: replaced all hardcoded layout strings, addressed lint warnings (baseline alignment, focusable chips, deprecated APIs), removed redundant qualifiers/imports, and updated LocaleManager utilities.
+## What it does
 
-These innovations turn the original prototype into a localized, risk‑aware trading companion ready for real intraday desk use.
+| Area | Capabilities |
+| --- | --- |
+| **Market dashboard** | XAU/USD price context, 24-hour change, session countdowns, and reference levels such as daily open, previous-day high, and previous-day low |
+| **Market context** | Bias drivers (including DXY, yields, VIX, and momentum), market-regime information, and provider-quality indicators |
+| **Risk-aware alerts** | Trade gates, Plan-Lock thresholds, and visible reasons when conditions do not qualify |
+| **Trade journal** | Create and edit entries, capture risk/reward context and screenshots, export CSV, and queue background synchronization |
+| **Chart & onboarding** | Embedded TradingView chart, timeframe shortcuts, and guided first-run experience |
+| **Personalisation** | English, isiZulu, and Afrikaans interface resources; notification preferences and time-zone settings |
 
-## Project structure
-- Android app: `app/`
-  - Entry: `com.example.sniperflow.auth.LoginActivity`
-  - Home: `com.example.sniperflow.MainActivity`
-  - Journal: `com.example.sniperflow.ui.journal.*` (Room DB, DAO, UI)
-  - Chart: `com.example.sniperflow.chart.ChartActivity` + `assets/chart.html`
-  - Networking: `com.example.sniperflow.network.*` (Retrofit/Moshi/OkHttp)
-  - Metrics/domain models: `com.example.sniperflow.domain.*`
-  - Keep‑alive/polling: `ui.keepalive.BackendKeepAlive`, WS: `PriceWsClient`
-- Backend (optional): `backend/`
-  - FastAPI service exposing `/home`, levels, drivers/nowcast, journal endpoints
-  - See `backend/README.md` for provider notes and local run instructions
+Market-data features depend on configured providers and network availability. The interface includes cached or degraded states when live information is unavailable.
 
-## Key technologies
-- Kotlin, AndroidX, Material Components
-- Retrofit + Moshi + OkHttp (with timeouts)
-- Room (KSP) + WorkManager for background sync
-- WebView (TradingView embed) with console logging enabled in debug
-- Coil for images, FlexboxLayout for driver chips, Timber for logs
-- Firebase Auth (email/password) — can be disabled if not needed
+## Technology and architecture
 
-## Configuration
-
-### API base URL
-The app uses `BuildConfig.BASE_URL` (set per build type in `app/build.gradle.kts`). Defaults to the hosted Render API:
+- **Android:** Kotlin, AndroidX, Material Components, Jetpack Compose, Retrofit, OkHttp, Moshi
+- **Local data:** Room database and WorkManager for offline-first journaling and queued sync
+- **Backend:** FastAPI with endpoints for price context, intraday levels, driver data, and journal records
+- **Integrations:** TradingView chart embed and Firebase Authentication support
+- **Quality:** Gradle build configuration, unit-test sources, and GitHub Actions workflows
 
 ```text
-debug/release BASE_URL = https://sniperflow-api.onrender.com/
+Android app (Kotlin)
+  ├── Dashboard, alerts, chart, settings
+  ├── Room journal + WorkManager sync
+  └── Retrofit / WebSocket client
+          │
+          ▼
+FastAPI backend (Python)
+  ├── Market context and levels
+  ├── Drivers / regime endpoints
+  └── Journal API
+          │
+          ▼
+External market-data providers (when configured)
 ```
 
-For local backend during emulator development, use the emulator loopback and ensure a trailing slash (Retrofit requirement):
+## Repository layout
 
-```text
-http://10.0.2.2:8787/
-```
+| Path | Purpose |
+| --- | --- |
+| [`app/`](app/) | Android app, UI, networking, local journal, and unit tests |
+| [`backend/`](backend/) | Python API and its [setup notes](backend/README.md) |
+| [`models/`](models/) | Model-related project assets |
+| [`TRAINING_GUIDE.md`](TRAINING_GUIDE.md) | Experimental model-training workflow |
+| [`.github/workflows/`](.github/workflows/) | CI configuration |
 
-Change it in `app/build.gradle.kts`:
+## Run the Android app
 
-```startLine:endLine:SniperFlow/app/build.gradle.kts
-// ... inside android { buildTypes { debug { ... } } }
-buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8787/\"")
-```
+**Requirements:** Android Studio, JDK 17, and Android SDK 36. The project compiles Kotlin/JVM code to Java 11 bytecode.
 
-Notes:
-- Manifest sets `android:usesCleartextTraffic="true"` to allow `http://` in dev.
-- `RetrofitModule` normalizes the trailing slash, but keep it in the value to be explicit.
+1. Clone the repository and open its root directory in Android Studio.
 
-### Settings screen
-- Epsilon: price step used by +/- steppers in the journal sheet
-- Cooldown (ms): throttle for manual and auto refresh on Home
-- Timezone: affects session calculations (default `Africa/Johannesburg`)
-- Optional “Test API” button pings `/health` on the configured `BASE_URL`
+   ```bash
+   git clone https://github.com/OleTab22/SniperFlowApp.git
+   cd SniperFlowApp
+   ```
 
-## Running the Android app
+2. Configure Firebase for the current build. The app applies the Google Services Gradle plugin, but `google-services.json` is excluded from version control. Supply the configuration for your own Firebase project at `app/google-services.json`. Never commit private credentials.
+3. Let Gradle sync, select an Android emulator or device, and run the `app` configuration.
 
-Prereqs: Android Studio Jellyfish+ (or newer), Android SDK 36, JDK 11 (the project sets `jvmTarget = 11`).
-
-1) Open this folder in Android Studio and let Gradle sync.
-2) Build and run on an emulator or device.
-3) If using a local backend, set `BASE_URL` to `http://10.0.2.2:8787/` and run the backend (see below).
-
-Gradle CLI examples:
+For command-line development:
 
 ```bash
 ./gradlew :app:assembleDebug
-./gradlew :app:installDebug
 ./gradlew test
 ```
 
-Firebase note: a `google-services.json` is present. If you don’t want Firebase, you can remove the Google Services plugin and the Auth dependency, or keep them — core features work without sign‑in.
+On Windows, use `gradlew.bat` instead of `./gradlew`.
 
-## Backend (optional, local)
+### API configuration
 
-FastAPI service lives in `backend/`. It consolidates free data sources and exposes:
+The Android app reads `BuildConfig.BASE_URL` from [`app/build.gradle.kts`](app/build.gradle.kts). Its current default is:
 
-- GET `/health` — liveness
-- GET `/home` — consolidated payload (price, metrics, levels, sessions, alerts, gates)
-- GET `/levels/intraday` and `/levels/intraday/sessions` — XAUUSD levels and session splits
-- GET `/v1/levels/today` — DO/PDH/PDL for today (UTC‑anchored)
-- GET `/v1/nowcast`, `/v1/drivers` — model score and driver chips (fallbacks)
-- POST `/v1/journal` (PUT/DELETE variants) — receive journal entries from the app
-- WS `/ticks` — optional price stream
+```text
+https://sniperflow-api.onrender.com/
+```
 
-See `backend/README.md` for API keys and exact commands. Quick start:
+To use your own backend from an Android emulator, change the relevant `buildConfigField` to:
+
+```kotlin
+buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8787/\"")
+```
+
+`10.0.2.2` is the emulator's route to your development computer. Retain the trailing slash required by Retrofit. Prefer HTTPS outside local development.
+
+## Run the FastAPI backend
+
+From the repository root:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r backend/requirements.txt
 export TWELVEDATA_API_KEY=your_key
 export FRED_API_KEY=your_key
 uvicorn backend.main:app --port 8787
 ```
 
-With the Android emulator, `http://10.0.2.2:8787/` will map to the host.
+On Windows, activate the virtual environment with `.venv\Scripts\activate` and set environment variables with the syntax for your shell. See the [backend README](backend/README.md) for data-source and endpoint details. Never commit real API keys.
 
-## Using the app
-- Home: pull to refresh or tap Refresh. Connection dot shows WS/Polling/Offline and stale hints.
-- Session pills: tap to see minutes left; highlighting adapts to your timezone.
-- Driver chips: tap for a brief explanation dialog.
-- Journal: tap + to add; long‑press a list item to edit; swipe to delete.
-- CSV export: in Journal screen menu (three dots). Files go to the app Documents directory, typically:
+## Testing and project status
 
-```text
-/storage/emulated/0/Android/data/com.example.sniperflow/files/Documents/journal-YYYYMMDD-HHmm.csv
-```
-
-## Testing
-
-Run unit tests:
+Unit-test sources are in [`app/src/test/`](app/src/test/). Run them with:
 
 ```bash
 ./gradlew test
 ```
 
-Notable tests live in `app/src/test/java/com/example/sniperflow/`:
-- `AlertEngineTest.kt` — alert cooldown/side transitions
-- `RrCalcTest.kt` — R:R calculator
-- `GatesTest.kt` — trade gates actionable logic
-- `CountdownTest.kt` — countdown math
+The repository contains Android build and test automation in [GitHub Actions](https://github.com/OleTab22/SniperFlowApp/actions). A [verified run on 27 October 2026](https://github.com/OleTab22/SniperFlowApp/actions/runs/40486078174) successfully completed the debug APK build, JVM unit-test task, and Android lint. The workflow and two corrected test scenarios are proposed in [PR #6](https://github.com/OleTab22/SniperFlowApp/pull/6).
 
-## Troubleshooting
-- API cold starts (Render free tier) — first `/home` may be slow; the app shows “Degraded/Offline” banners and falls back to cached UI.
-- Base URL must be reachable and end with `/`.
-- Emulator local backend requires `http://10.0.2.2:8787/` (not `localhost`).
-- Cleartext HTTP allowed only for dev; use HTTPS for production.
-- If Firebase Auth causes build issues, temporarily remove the Google Services plugin and Auth dependency.
+CI uses **synthetic Firebase configuration for compile-only verification**. It does not prove live Firebase Authentication or notification integrations work. Those require a real Firebase project and dedicated integration testing.
 
-## License & disclaimer
-- License: see `LICENSE` in the repository.
-- Disclaimer: For education only. No financial advice; use at your own risk.
+The app is an evolving project. External data providers can be rate-limited or unavailable, the hosted API may take time to start, and market context must not be treated as a guaranteed signal. No live trading or return claims are made here.
 
+## License
+
+See [LICENSE](LICENSE). SniperFlow is for educational and software-development purposes only, not financial advice.
